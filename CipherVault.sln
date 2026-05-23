@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36518.9
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CipherVault", "CipherVault.csproj", "{83E811B0-0902-57BF-3FC0-B876850F28CF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {1DBD584A-FA03-481D-AE5B-1D5F46095004}
+	EndGlobalSection
+EndGlobal
