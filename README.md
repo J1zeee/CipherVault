@@ -2,6 +2,8 @@
 
 <div align="center">
 
+[![Русский](/docs/README-RU.md)]
+
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
@@ -136,14 +138,13 @@ All security events are logged:
 
 ## 📸 Screenshots
 
-> 
-> ![Login screen](resources/LoginScreen.png)
 >
-> ![Main app](resources/MainApp.png)
->
-> ![Add new credential](resources/AddCredential.png)
->
-> ![Settings](resources/SettingsPanel.png)
+><p align="center">
+>  <img src="Screenshots/LoginScreen.png" width="800" alt="Login screen">
+>  <img src="Screenshots/MainApp.png" width="800" alt="Main app">
+>  <img src="Screenshots/AddCredential.png" width="800" alt="Add new credential">
+>  <img src="Screenshots/SettingsPanel.png" width="800" alt="Settings">
+></p>
 >
 
 ---
