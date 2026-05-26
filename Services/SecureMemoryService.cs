@@ -38,7 +38,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
     private static extern bool CryptUnprotectMemory(IntPtr pDataIn, uint cbDataIn, uint dwFlags);
 
     private const uint CRYPTPROTECTMEMORY_SAME_PROCESS = 0x00;
-    private const uint CRYPTPROTECTMEMORY_CROSS_PROCESS = 0x01;
 
     public SecureBuffer(int sizeInBytes)
     {

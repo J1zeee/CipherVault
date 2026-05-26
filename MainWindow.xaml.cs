@@ -1,9 +1,11 @@
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using CipherVault.Models;
 using CipherVault.Services;
@@ -27,6 +29,11 @@ public partial class MainWindow : Window
     private Grid? _previousScreen;
     private string _vaultPath = "";
     private VaultInfo? _selectedVault;
+
+    private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
 
     private const int AutoLockTimeoutMinutes = 1;
     private const int ClipboardClearSeconds = 10;
@@ -290,8 +297,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private void PreventScreenCapture()
+    {
+        try
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE);
+        }
+        catch
+        {
+        }
+    }
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        PreventScreenCapture();
         UpdateMaximizeButton();
         UpdateUIText();
         RefreshVaultList();

@@ -21,8 +21,7 @@ public enum AuditEventType
     PasswordGenerated,
     ClipboardCleared,
     SessionExpired,
-    SecurityWarning,
-    TpmEnabled
+    SecurityWarning
 }
 
 public sealed class AuditEntry
