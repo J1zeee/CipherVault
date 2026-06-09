@@ -153,10 +153,8 @@ Master password  +  Random salt
 
 - [ ] Have I Been Pwned integration (k-anonymity API)
 - [ ] Browser auto-fill extension
-- [ ] Password health dashboard (weak / reused / expired)
 - [ ] TOTP authenticator
-- [ ] Encrypted export with password
-- [ ] macOS / Linux support (Avalonia / MAUI)
+- [ ] Android / macOS / Linux support (Avalonia / MAUI)
 
 <br>
 
