@@ -6,7 +6,7 @@
 [![C#](https://img.shields.io/badge/C%23-14-239120?logo=csharp)](https://learn.microsoft.com/dotnet/csharp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D4?logo=windows)](https://www.microsoft.com/windows)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/Anomalyous/CipherVaultV2/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/J1zeee/CipherVault/releases/latest)
 [![Readme](https://img.shields.io/badge/Readme-Русский-1976D2)](docs/README-RU.md)
 
 <br>
@@ -101,7 +101,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 ### Download release
 
-Download the latest `CipherVault-v1.0.0-win-x64.zip` from [Releases](https://github.com/Anomalyous/CipherVaultV2/releases/latest), extract and run `CipherVault.exe`.
+Download the latest `CipherVault-v1.0.0.zip` from [Releases](https://github.com/J1zeee/CipherVault/releases/latest), extract and run `CipherVault.exe`.
 
 <br>
 
