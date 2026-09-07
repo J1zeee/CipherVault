@@ -30,14 +30,33 @@ public partial class MainWindow : Window
     private string _vaultPath = "";
     private VaultInfo? _selectedVault;
 
+    private const uint WDA_MONITOR = 0x00000001;
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+
+    // Downgraded to WDA_MONITOR once if the OS is older than Windows 10 2004.
+    private static uint _captureAffinity = WDA_EXCLUDEFROMCAPTURE;
 
     private const int AutoLockTimeoutMinutes = 1;
     private const int ClipboardClearSeconds = 10;
     private const int LockoutUpdateIntervalMs = 100;
+
+    static MainWindow()
+    {
+        // Tooltips and context menus are hosted in their own top-level HWNDs, which the
+        // affinity set on the main window does not cover. WPF never invokes class
+        // handlers for Loaded, so these opening events are the hook; the HWND does not
+        // exist yet when they fire, hence the deferred sweep.
+        EventManager.RegisterClassHandler(typeof(FrameworkElement),
+            FrameworkElement.ToolTipOpeningEvent,
+            new ToolTipEventHandler((s, e) => ScheduleCaptureProtectionSweep()));
+        EventManager.RegisterClassHandler(typeof(FrameworkElement),
+            FrameworkElement.ContextMenuOpeningEvent,
+            new ContextMenuEventHandler((s, e) => ScheduleCaptureProtectionSweep()));
+    }
 
     public MainWindow()
     {
@@ -75,7 +94,7 @@ public partial class MainWindow : Window
         PreviewMouseMove += OnUserActivity;
         PreviewKeyDown += OnUserActivity;
         
-        Loaded += MainWindow_Loaded;
+        SourceInitialized += MainWindow_SourceInitialized;
         Deactivated += Window_Deactivated;
         Activated += Window_Activated;
         Closing += MainWindow_Closing;
@@ -297,21 +316,117 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PreventScreenCapture()
+    private static bool TrySetCaptureAffinity(IntPtr handle, uint affinity)
     {
+        if (handle == IntPtr.Zero)
+        {
+            return false;
+        }
+
         try
         {
-            var handle = new WindowInteropHelper(this).Handle;
-            SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE);
+            return SetWindowDisplayAffinity(handle, affinity);
         }
         catch
         {
+            return false;
         }
+    }
+
+    // Applies the affinity to every HWND the app currently owns, main window included.
+    // Idempotent, and the source list is only ever a handful of entries.
+    private static void ProtectAllAppWindows()
+    {
+        foreach (PresentationSource source in PresentationSource.CurrentSources)
+        {
+            if (source is HwndSource hwndSource && !hwndSource.IsDisposed)
+            {
+                TrySetCaptureAffinity(hwndSource.Handle, _captureAffinity);
+            }
+        }
+    }
+
+    private static void ScheduleCaptureProtectionSweep()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        // Render priority runs after the popup HWND is created but before it is painted.
+        dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(ProtectAllAppWindows));
+    }
+
+    private void HookDropDowns()
+    {
+        // Logical tree rather than visual: it also reaches combo boxes inside panels
+        // that are still collapsed, and does not need their templates applied.
+        foreach (var comboBox in FindLogicalDescendants<ComboBox>(this))
+        {
+            comboBox.DropDownOpened -= OnDropDownOpened;
+            comboBox.DropDownOpened += OnDropDownOpened;
+        }
+    }
+
+    private static void OnDropDownOpened(object? sender, EventArgs e)
+    {
+        // The drop-down HWND already exists here, but sweep again next frame in case
+        // WPF recycled it.
+        ProtectAllAppWindows();
+        ScheduleCaptureProtectionSweep();
+    }
+
+    private static IEnumerable<T> FindLogicalDescendants<T>(DependencyObject root) where T : DependencyObject
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject node)
+            {
+                continue;
+            }
+
+            if (node is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var nested in FindLogicalDescendants<T>(node))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private void PreventScreenCapture()
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+
+        if (TrySetCaptureAffinity(handle, _captureAffinity))
+        {
+            return;
+        }
+
+        // WDA_EXCLUDEFROMCAPTURE needs Windows 10 2004 (build 19041). On older builds
+        // fall back to WDA_MONITOR: capture APIs still get a black window, only DWM
+        // thumbnails stay visible.
+        if (_captureAffinity == WDA_EXCLUDEFROMCAPTURE
+            && TrySetCaptureAffinity(handle, WDA_MONITOR))
+        {
+            _captureAffinity = WDA_MONITOR;
+        }
+    }
+
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        // Applied here rather than in Loaded: the HWND exists but nothing has been
+        // painted yet, so there is no frame the window can be captured on.
+        PreventScreenCapture();
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        PreventScreenCapture();
+        HookDropDowns();
         UpdateMaximizeButton();
         UpdateUIText();
         RefreshVaultList();
@@ -1163,7 +1278,23 @@ public partial class MainWindow : Window
     private void SettingsBackBtn_Click(object sender, RoutedEventArgs e)
     {
         ApplyPathChanges();
-        ShowVaultSelection();
+
+        // Settings is an overlay, not a logout. Always falling through to the vault
+        // list looked like a lock while the vault stayed unlocked and the master key
+        // stayed in memory, so return to whichever screen opened settings.
+        if (_previousScreen == MainApp && _isVaultUnlocked)
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            LoginScreen.Visibility = Visibility.Collapsed;
+            MainApp.Visibility = Visibility.Visible;
+            ResetAutoLockTimer();
+        }
+        else
+        {
+            ShowVaultSelection();
+        }
+
+        _previousScreen = null;
     }
 
     private void VaultPathBrowseBtn_Click(object sender, RoutedEventArgs e)
