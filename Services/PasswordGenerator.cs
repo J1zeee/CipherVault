@@ -183,7 +183,7 @@ public class PasswordGenerator
                 Entropy = 0,
                 EntropyBits = 0,
                 CrackTimeSeconds = 0,
-                CrackTimeDisplay = "Instant",
+                CrackTime = DescribeCrackTime(0),
                 Label = "Very Weak",
                 Suggestions = new List<string> { "Enter a password" }
             };
@@ -292,7 +292,7 @@ public class PasswordGenerator
             Entropy = rawEntropy,
             EntropyBits = (int)Math.Round(rawEntropy),
             CrackTimeSeconds = crackTimeSeconds,
-            CrackTimeDisplay = FormatCrackTime(crackTimeSeconds),
+            CrackTime = DescribeCrackTime(crackTimeSeconds),
             PoolSize = poolSize,
             Label = label,
             Suggestions = suggestions.Distinct().ToList(),
@@ -460,17 +460,22 @@ public class PasswordGenerator
         return false;
     }
 
-    private string FormatCrackTime(double seconds)
+    /// <summary>How long a crack takes, as a number plus the localization key for its unit.</summary>
+    public readonly record struct CrackTimeDescription(double Amount, string UnitKey);
+
+    private const double SecondsPerYear = 31536000d;
+
+    public static CrackTimeDescription DescribeCrackTime(double seconds)
     {
-        if (seconds < 1) return "Instant";
-        if (seconds < 60) return $"{seconds:F0} seconds";
-        if (seconds < 3600) return $"{seconds / 60:F0} minutes";
-        if (seconds < 86400) return $"{seconds / 3600:F0} hours";
-        if (seconds < 31536000) return $"{seconds / 86400:F0} days";
-        if (seconds < (double)31536000 * 100) return $"{seconds / 31536000:F1} years";
-        if (seconds < (double)31536000 * 1000000) return $"{seconds / 31536000 / 1000:F0}K years";
-        
-        return $"{seconds / 31536000 / 1000000:F0}M+ years";
+        if (seconds < 1) return new CrackTimeDescription(0, "CrackTimeInstant");
+        if (seconds < 60) return new CrackTimeDescription(seconds, "CrackTimeSeconds");
+        if (seconds < 3600) return new CrackTimeDescription(seconds / 60, "CrackTimeMinutes");
+        if (seconds < 86400) return new CrackTimeDescription(seconds / 3600, "CrackTimeHours");
+        if (seconds < SecondsPerYear) return new CrackTimeDescription(seconds / 86400, "CrackTimeDays");
+        if (seconds < SecondsPerYear * 1000) return new CrackTimeDescription(seconds / SecondsPerYear, "CrackTimeYears");
+        if (seconds < SecondsPerYear * 1_000_000) return new CrackTimeDescription(seconds / SecondsPerYear / 1000, "CrackTimeThousandYears");
+
+        return new CrackTimeDescription(seconds / SecondsPerYear / 1_000_000, "CrackTimeMillionYears");
     }
 
     [Obsolete("Use AnalyzeStrength instead")]
@@ -499,7 +504,7 @@ public class PasswordStrengthResult
     public double Entropy { get; set; }
     public int EntropyBits { get; set; }
     public double CrackTimeSeconds { get; set; }
-    public string CrackTimeDisplay { get; set; } = "";
+    public PasswordGenerator.CrackTimeDescription CrackTime { get; set; }
     public int PoolSize { get; set; }
     public string Label { get; set; } = "";
     public List<string> Suggestions { get; set; } = new();
