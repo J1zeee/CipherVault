@@ -12,7 +12,8 @@
         Height="800" Width="1100"
         MinHeight="600" MinWidth="900"
         WindowStartupLocation="CenterScreen"
-        WindowBackdropType="Mica"
+        WindowBackdropType="None"
+        Background="{StaticResource PrimaryDarkBrush}"
         ExtendsContentIntoTitleBar="True"
         Loaded="MainWindow_Loaded">
 

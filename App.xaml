@@ -12,31 +12,42 @@
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Colors -->
-            <Color x:Key="PrimaryDark">#0D1117</Color>
-            <Color x:Key="SecondaryDark">#161B22</Color>
-            <Color x:Key="CardBackground">#21262D</Color>
-            <Color x:Key="BorderColor">#30363D</Color>
+            <Color x:Key="PrimaryDark">#0A0A0A</Color>
+            <Color x:Key="SecondaryDark">#121212</Color>
+            <Color x:Key="CardBackground">#171717</Color>
+            <Color x:Key="BorderColor">#282828</Color>
             <Color x:Key="AccentBlue">#58A6FF</Color>
             <Color x:Key="AccentGreen">#3FB950</Color>
             <Color x:Key="AccentOrange">#F0883E</Color>
             <Color x:Key="AccentRed">#F85149</Color>
             <Color x:Key="AccentPurple">#A371F7</Color>
-            <Color x:Key="TextPrimary">#F0F6FC</Color>
-            <Color x:Key="TextSecondary">#8B949E</Color>
-            <Color x:Key="TextMuted">#6E7681</Color>
+            <Color x:Key="TextPrimary">#F2F2F2</Color>
+            <Color x:Key="TextSecondary">#9A9A9A</Color>
+            <Color x:Key="TextMuted">#6B6B6B</Color>
 
-            <SolidColorBrush x:Key="PrimaryDarkBrush" Color="{DynamicResource ApplicationBackgroundColor}"/>
-            <SolidColorBrush x:Key="SecondaryDarkBrush" Color="{DynamicResource ControlFillColorDefault}"/>
-            <SolidColorBrush x:Key="CardBackgroundBrush" Color="{DynamicResource CardBackgroundFillColorDefault}"/>
-            <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource ControlStrokeColorDefault}"/>
+            <SolidColorBrush x:Key="PrimaryDarkBrush" Color="{StaticResource PrimaryDark}"/>
+            <SolidColorBrush x:Key="SecondaryDarkBrush" Color="{StaticResource SecondaryDark}"/>
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackground}"/>
+            <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource BorderColor}"/>
             <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource AccentBlue}"/>
             <SolidColorBrush x:Key="AccentGreenBrush" Color="{StaticResource AccentGreen}"/>
             <SolidColorBrush x:Key="AccentOrangeBrush" Color="{StaticResource AccentOrange}"/>
             <SolidColorBrush x:Key="AccentRedBrush" Color="{StaticResource AccentRed}"/>
             <SolidColorBrush x:Key="AccentPurpleBrush" Color="{StaticResource AccentPurple}"/>
-            <SolidColorBrush x:Key="TextPrimaryBrush" Color="{DynamicResource TextFillColorPrimary}"/>
-            <SolidColorBrush x:Key="TextSecondaryBrush" Color="{DynamicResource TextFillColorSecondary}"/>
-            <SolidColorBrush x:Key="TextMutedBrush" Color="{DynamicResource TextFillColorTertiary}"/>
+            <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
+            <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
+            <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}"/>
+
+            <!-- Overrides the library's accent, which otherwise tracks the Windows
+                 personalization colour and turned the primary buttons pink. A
+                 monochrome accent keeps the interface uniform and free of colour
+                 the app did not choose. -->
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#E8E8E8"/>
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#D6D6D6"/>
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#BFBFBF"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#0A0A0A"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#4D0A0A0A"/>
+            <SolidColorBrush x:Key="AccentControlElevationBorderBrush" Color="#E8E8E8"/>
 
             <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Color="#58A6FF" Offset="0"/>
