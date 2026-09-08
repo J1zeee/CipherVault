@@ -11,7 +11,7 @@ public class SecureInputBox : Control
 {
     private SecureBuffer? _secureBuffer;
     private bool _isDisposed;
-    private static readonly object _lockObj = new();
+    private readonly object _lockObj = new();
     private bool _isPasswordVisible;
 
     public static readonly DependencyProperty TextProperty =
@@ -207,10 +207,7 @@ public class SecureInputBox : Control
         }
     }
 
-    ~SecureInputBox()
-    {
-        Dispose();
-    }
+    // No finalizer: the buffer it holds cleans up after itself.
 }
 
 public class SecurePasswordInput : SecureInputBox

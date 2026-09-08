@@ -39,6 +39,41 @@ public class SecureClipboardTests
         Assert.True(payload.GetDataPresent(SecureClipboard.ExcludeFromMonitorFormat));
     }
 
+    // --- ownership tracking: never wipe content this app did not put there ---
+
+    [Fact]
+    public void RememberedContentIsRecognised()
+    {
+        SecureClipboard.RememberCopy("hunter2");
+
+        Assert.True(SecureClipboard.IsRememberedContent("hunter2"));
+    }
+
+    [Fact]
+    public void ContentReplacedBySomeoneElseIsNotOurs()
+    {
+        SecureClipboard.RememberCopy("hunter2");
+
+        Assert.False(SecureClipboard.IsRememberedContent("a shopping list"));
+    }
+
+    [Fact]
+    public void NothingIsOursBeforeAnythingWasCopied()
+    {
+        SecureClipboard.ForgetCopy();
+
+        Assert.False(SecureClipboard.IsRememberedContent("anything"));
+    }
+
+    [Fact]
+    public void AnEmptyOrMissingClipboardIsNotOurs()
+    {
+        SecureClipboard.RememberCopy("hunter2");
+
+        Assert.False(SecureClipboard.IsRememberedContent(null));
+        Assert.False(SecureClipboard.IsRememberedContent(""));
+    }
+
     [Fact]
     public void OptOutFormats_CarryAZeroDwordAsWindowsExpects()
     {

@@ -83,22 +83,29 @@ public class MainViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(credential.Title))
             return false;
 
+        Credential? replaced = null;
+
         try
         {
             if (IsEditMode && SelectedCredential != null)
             {
                 var index = Credentials.IndexOf(SelectedCredential);
-                if (index >= 0)
+                if (index < 0)
                 {
-                    var existing = Credentials.FirstOrDefault(c => 
-                        c.Title.Equals(credential.Title, StringComparison.OrdinalIgnoreCase) && c != SelectedCredential);
-                    if (existing != null) return false;
-
-                    Credentials.RemoveAt(index);
-                    credential.CreatedAt = SelectedCredential.CreatedAt;
-                    credential.ModifiedAt = DateTime.Now;
-                    Credentials.Insert(index, credential);
+                    // The selection is not in the collection, so the edit has nowhere
+                    // to land. Reporting success here silently discarded the change.
+                    return false;
                 }
+
+                var existing = Credentials.FirstOrDefault(c => 
+                    c.Title.Equals(credential.Title, StringComparison.OrdinalIgnoreCase) && c != SelectedCredential);
+                if (existing != null) return false;
+
+                replaced = Credentials[index];
+                Credentials.RemoveAt(index);
+                credential.CreatedAt = replaced.CreatedAt;
+                credential.ModifiedAt = DateTime.Now;
+                Credentials.Insert(index, credential);
             }
             else
             {
@@ -117,7 +124,14 @@ public class MainViewModel : INotifyPropertyChanged
             
             SelectedCredential = credential;
             FilterCredentials();
-            
+
+            // Only once nothing refers to it any more: the replaced entry owns pinned
+            // buffers still holding the previous secret.
+            if (replaced != null && !ReferenceEquals(replaced, credential))
+            {
+                replaced.Dispose();
+            }
+
             return true;
         }
         catch (Exception ex)

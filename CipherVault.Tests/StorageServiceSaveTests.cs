@@ -9,6 +9,9 @@ public class StorageServiceSaveTests : IDisposable
 {
     private const string MasterPassword = "correct horse battery staple";
 
+    private static byte[] Password() => System.Text.Encoding.UTF8.GetBytes(MasterPassword);
+
+
     private readonly string _dir;
     private readonly string _vaultDat;
 
@@ -34,7 +37,7 @@ public class StorageServiceSaveTests : IDisposable
     public void SaveVault_KeepsPreviousVaultAsRecoverableBackup()
     {
         using var service = new StorageService(_dir);
-        service.CreateVault(MasterPassword);
+        service.CreateVault(Password());
 
         service.SaveVault(OneCredential("first"));
         var contentAfterFirstSave = File.ReadAllBytes(_vaultDat);
@@ -49,7 +52,7 @@ public class StorageServiceSaveTests : IDisposable
     public void SaveVault_LeavesNoTempFileBehind()
     {
         using var service = new StorageService(_dir);
-        service.CreateVault(MasterPassword);
+        service.CreateVault(Password());
 
         service.SaveVault(OneCredential("first"));
 
@@ -60,7 +63,7 @@ public class StorageServiceSaveTests : IDisposable
     public void SaveVault_ContentStillDecryptsAfterAtomicWrite()
     {
         using var service = new StorageService(_dir);
-        service.CreateVault(MasterPassword);
+        service.CreateVault(Password());
 
         service.SaveVault(OneCredential("github"));
         var loaded = service.LoadVault();

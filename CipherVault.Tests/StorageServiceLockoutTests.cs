@@ -7,6 +7,9 @@ namespace CipherVault.Tests;
 public class StorageServiceLockoutTests : IDisposable
 {
     private const string MasterPassword = "correct horse battery staple";
+
+    private static byte[] Password() => System.Text.Encoding.UTF8.GetBytes(MasterPassword);
+
     private const int MaxFailedAttempts = 5;
 
     private readonly string _dir;
@@ -16,7 +19,7 @@ public class StorageServiceLockoutTests : IDisposable
         _dir = Path.Combine(Path.GetTempPath(), "CipherVaultTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dir);
         using var service = new StorageService(_dir);
-        service.CreateVault(MasterPassword);
+        service.CreateVault(Password());
     }
 
     public void Dispose()
@@ -28,7 +31,7 @@ public class StorageServiceLockoutTests : IDisposable
     {
         using var service = new StorageService(_dir);
         for (var i = 0; i < times; i++)
-            service.VerifyPassword("wrong password");
+            service.VerifyPassword(System.Text.Encoding.UTF8.GetBytes("wrong password"));
     }
 
     [Fact]
@@ -59,7 +62,7 @@ public class StorageServiceLockoutTests : IDisposable
 
         using (var service = new StorageService(_dir))
         {
-            var (success, _, _) = service.VerifyPassword(MasterPassword);
+            var (success, _, _) = service.VerifyPassword(Password());
             Assert.True(success);
         }
 

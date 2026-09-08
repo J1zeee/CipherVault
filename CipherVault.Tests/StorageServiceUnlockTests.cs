@@ -10,6 +10,9 @@ public class StorageServiceUnlockTests : IDisposable
 {
     private const string MasterPassword = "correct horse battery staple";
 
+    private static byte[] Password() => System.Text.Encoding.UTF8.GetBytes(MasterPassword);
+
+
     private readonly string _dir;
 
     public StorageServiceUnlockTests()
@@ -18,7 +21,7 @@ public class StorageServiceUnlockTests : IDisposable
         Directory.CreateDirectory(_dir);
 
         using var service = new StorageService(_dir);
-        service.CreateVault(MasterPassword);
+        service.CreateVault(Password());
         service.SaveVault(new List<Credential> { new Credential { Title = "github", Password = "s3cret" } });
     }
 
@@ -40,7 +43,7 @@ public class StorageServiceUnlockTests : IDisposable
     {
         using var service = new StorageService(_dir);
 
-        var (success, _, _) = service.VerifyPassword(MasterPassword);
+        var (success, _, _) = service.VerifyPassword(Password());
 
         Assert.True(success);
         Assert.True(service.IsVaultOpen, "unlocking still requires a second Argon2 pass to open the vault");
@@ -50,7 +53,7 @@ public class StorageServiceUnlockTests : IDisposable
     public void VerifyPassword_ReadsTheVaultWithoutAnyFurtherSetup()
     {
         using var service = new StorageService(_dir);
-        service.VerifyPassword(MasterPassword);
+        service.VerifyPassword(Password());
 
         var loaded = service.LoadVault();
 
@@ -65,7 +68,7 @@ public class StorageServiceUnlockTests : IDisposable
         SetStoredVaultVersion(99);
         using var service = new StorageService(_dir);
 
-        Assert.Throws<InvalidOperationException>(() => service.VerifyPassword(MasterPassword));
+        Assert.Throws<InvalidOperationException>(() => service.VerifyPassword(Password()));
     }
 
     [Fact]
@@ -73,7 +76,7 @@ public class StorageServiceUnlockTests : IDisposable
     {
         using var service = new StorageService(_dir);
 
-        var (success, _, _) = service.VerifyPassword("not the password");
+        var (success, _, _) = service.VerifyPassword(System.Text.Encoding.UTF8.GetBytes("not the password"));
 
         Assert.False(success);
         Assert.False(service.IsVaultOpen);

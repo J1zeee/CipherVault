@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -131,8 +132,8 @@ public partial class MainWindow : Window
         // Clear all password fields
         ClearAllPasswords();
         
-        // Clear clipboard
-        SecureClipboard.TryClear();
+        // Clear clipboard, but only if it still holds what this app put there.
+        SecureClipboard.TryClearOurs();
     }
 
     private void ClearAllPasswords()
@@ -201,7 +202,7 @@ public partial class MainWindow : Window
     {
         _clipboardClearTimer.Stop();
         
-        if (SecureClipboard.TryClear())
+        if (SecureClipboard.TryClearOurs())
         {
             StatusMessage.Text = _localization["ClipboardCleared"];
             _storageService.LogClipboardCleared();
@@ -729,9 +730,12 @@ public partial class MainWindow : Window
     private void CreateVault_Click(object sender, RoutedEventArgs e)
     {
         var vaultName = NewVaultName.Text.Trim();
-        var masterPassword = CreateMasterPassword.Password;
-        var confirmPassword = ConfirmMasterPassword.Password;
         var loc = _localization;
+
+        // SecurePassword rather than Password: a .NET string is immutable and cannot
+        // be cleared, so a master password that becomes one stays in the heap.
+        using var securePassword = CreateMasterPassword.SecurePassword;
+        using var secureConfirm = ConfirmMasterPassword.SecurePassword;
         
         if (string.IsNullOrEmpty(vaultName))
         {
@@ -754,28 +758,34 @@ public partial class MainWindow : Window
             return;
         }
         
-        if (string.IsNullOrEmpty(masterPassword))
+        if (securePassword.Length == 0)
         {
             LoginStatusMessage.Text = loc["PasswordRequired"];
             return;
         }
 
-        if (masterPassword.Length < 8)
+        if (securePassword.Length < 8)
         {
             LoginStatusMessage.Text = loc["PasswordTooShort"];
             return;
         }
 
-        if (masterPassword != confirmPassword)
-        {
-            LoginStatusMessage.Text = loc["PasswordsMismatch"];
-            return;
-        }
-
         var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
+
+        byte[]? passwordBytes = null;
+        byte[]? confirmBytes = null;
 
         try
         {
+            passwordBytes = SecureStringConverter.ToUtf8Bytes(securePassword);
+            confirmBytes = SecureStringConverter.ToUtf8Bytes(secureConfirm);
+
+            if (!CryptographicOperations.FixedTimeEquals(passwordBytes, confirmBytes))
+            {
+                LoginStatusMessage.Text = loc["PasswordsMismatch"];
+                return;
+            }
+
             var vault = _vaultManager.CreateVault(vaultName, vaultPath);
 
             _storageService.Dispose();
@@ -784,16 +794,19 @@ public partial class MainWindow : Window
             _vaultPaths.SelectVault(vaultPath);
             _selectedVault = vault;
 
-            _storageService.CreateVault(masterPassword);
+            _storageService.CreateVault(passwordBytes);
         }
         catch (Exception)
         {
             LoginStatusMessage.Text = loc["VaultCreateFailed"];
             return;
         }
-        
-        // Securely clear password from memory
-        masterPassword = "";
+        finally
+        {
+            if (passwordBytes != null) CryptographicOperations.ZeroMemory(passwordBytes);
+            if (confirmBytes != null) CryptographicOperations.ZeroMemory(confirmBytes);
+        }
+
         CreateMasterPassword.Password = "";
         ConfirmMasterPassword.Password = "";
         
@@ -804,20 +817,26 @@ public partial class MainWindow : Window
 
     private void Unlock_Click(object sender, RoutedEventArgs e)
     {
-        var masterPassword = UnlockPassword.Password;
-        
-        if (string.IsNullOrEmpty(masterPassword))
+        using var securePassword = UnlockPassword.SecurePassword;
+
+        if (securePassword.Length == 0)
         {
             LoginStatusMessage.Text = _localization["EnterMasterPassword"];
             return;
         }
 
+        byte[]? passwordBytes = null;
+
         try
         {
+            // Converted straight to bytes we can zero; PasswordBox.Password would hand
+            // back an immutable string that cannot be cleared.
+            passwordBytes = SecureStringConverter.ToUtf8Bytes(securePassword);
+
             // VerifyPassword derives the key and opens the vault in one pass. It also
             // validates the stored vault version, so it can throw and belongs inside
             // this try rather than ahead of it.
-            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(masterPassword);
+            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBytes);
             if (!success)
             {
                 if (remainingSeconds > 0)
@@ -832,9 +851,7 @@ public partial class MainWindow : Window
             }
 
             var credentials = _storageService.LoadVault();
-            
-            // Clear password immediately after use
-            masterPassword = "";
+
             UnlockPassword.Password = "";
             
             _viewModel.Credentials.Clear();
@@ -860,6 +877,10 @@ public partial class MainWindow : Window
         catch (Exception)
         {
             LoginStatusMessage.Text = _localization["DecryptionFailed"];
+        }
+        finally
+        {
+            if (passwordBytes != null) CryptographicOperations.ZeroMemory(passwordBytes);
         }
     }
 
@@ -1349,7 +1370,10 @@ public partial class MainWindow : Window
 
     private void SettingsBackBtn_Click(object sender, RoutedEventArgs e)
     {
-        ApplyPathChanges();
+        if (ApplyPathChanges())
+        {
+            SavePathSettings();
+        }
 
         // Settings is an overlay, not a logout. Always falling through to the vault
         // list looked like a lock while the vault stayed unlocked and the master key
@@ -1375,8 +1399,10 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true)
         {
             VaultPathTextBox.Text = dialog.FolderName;
-            SavePathSettings();
-            ApplyPathChanges();
+            if (ApplyPathChanges())
+            {
+                SavePathSettings();
+            }
         }
     }
 
@@ -1384,8 +1410,10 @@ public partial class MainWindow : Window
     {
         var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
         VaultPathTextBox.Text = defaultPath;
-        SavePathSettings();
-        ApplyPathChanges();
+        if (ApplyPathChanges())
+        {
+            SavePathSettings();
+        }
     }
 
     private Action? _dialogConfirmAction;
@@ -1646,9 +1674,13 @@ public partial class MainWindow : Window
 
     private void ImportVault(string sourcePath, LocalizationService loc)
     {
+        // Extracted into a local so the finally below can always reach it: every early
+        // return and every exception used to leave a decryptable copy of someone's
+        // vault sitting in %TEMP%.
+        string tempDir = "";
+
         try
         {
-            string tempDir = "";
             string vaultDatPath = "";
             string configJsonPath = "";
 
@@ -1664,7 +1696,6 @@ public partial class MainWindow : Window
 
                 if (!File.Exists(vaultDatPath) || !File.Exists(configJsonPath))
                 {
-                    Directory.Delete(tempDir, true);
                     ShowDialog(loc["ImportVault"], loc["InvalidImportSource"]);
                     return;
                 }
@@ -1708,11 +1739,6 @@ public partial class MainWindow : Window
             File.Copy(vaultDatPath, Path.Combine(vaultPath, "vault.dat"), true);
             File.Copy(configJsonPath, Path.Combine(vaultPath, "config.json"), true);
 
-            if (!string.IsNullOrEmpty(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
-
             _vaultManager.CreateVault(vaultName, vaultPath);
 
             RefreshVaultList();
@@ -1721,6 +1747,13 @@ public partial class MainWindow : Window
         catch
         {
             ShowDialog(loc["ImportVault"], loc["ImportFailed"]);
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempDir) && Directory.Exists(tempDir))
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
         }
     }
 
@@ -1750,7 +1783,11 @@ public partial class MainWindow : Window
         VaultPathTextBox.Text = rootPath;
     }
 
-    private void ApplyPathChanges()
+    /// <summary>
+    /// Applies the path typed into settings. Returns false when the change was
+    /// refused, so the caller does not persist a path the app just rejected.
+    /// </summary>
+    private bool ApplyPathChanges()
     {
         var newVaultPath = VaultPathTextBox.Text;
 
@@ -1761,7 +1798,7 @@ public partial class MainWindow : Window
                 var loc = _localization;
                 ShowDialog(loc["VaultOpen"], loc["LockVaultBeforePathChange"]);
                 LoadPathSettings();
-                return;
+                return false;
             }
 
             _storageService.Dispose();
@@ -1779,6 +1816,8 @@ public partial class MainWindow : Window
                 ShowDialog(loc["Warning"], loc["NoVaultAtPath"]);
             }
         }
+
+        return true;
     }
 
     private void UnlockPassword_KeyDown(object sender, KeyEventArgs e)

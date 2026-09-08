@@ -11,7 +11,7 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
     private bool _isDisposed;
     private bool _isLocked;
     private bool _isProtected;
-    private static readonly object _lockObj = new();
+    private readonly object _lockObj = new();
     private byte[]? _managedBuffer;
 
     private const int MEM_COMMIT = 0x1000;
@@ -241,33 +241,48 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             if (_isDisposed)
                 return;
 
-            Unlock();
-
-            if (_ptr != IntPtr.Zero)
-            {
-                var sizeToRelease = _size;
-                SecureZero();
-                VirtualFree(_ptr, 0, MEM_RELEASE);
-                _ptr = IntPtr.Zero;
-                GC.RemoveMemoryPressure(sizeToRelease);
-            }
-
-            if (_managedBuffer != null)
-            {
-                CryptographicOperations.ZeroMemory(_managedBuffer);
-                _managedBuffer = null;
-            }
-
-            _size = 0;
-            _isDisposed = true;
-            _isProtected = false;
-            GC.SuppressFinalize(this);
+            ReleaseResources();
         }
+
+        GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// This buffer owns VirtualAlloc'd memory, which is precisely what a finalizer is
+    /// for - it is the one kept in this codebase. It deliberately does NOT take the
+    /// lock: whoever holds it may be blocked, and a stalled finalizer thread stalls
+    /// cleanup for the whole process.
+    /// </summary>
     ~SecureBuffer()
     {
-        Dispose();
+        if (_isDisposed)
+            return;
+
+        ReleaseResources();
+    }
+
+    private void ReleaseResources()
+    {
+        Unlock();
+
+        if (_ptr != IntPtr.Zero)
+        {
+            var sizeToRelease = _size;
+            SecureZero();
+            VirtualFree(_ptr, 0, MEM_RELEASE);
+            _ptr = IntPtr.Zero;
+            GC.RemoveMemoryPressure(sizeToRelease);
+        }
+
+        if (_managedBuffer != null)
+        {
+            CryptographicOperations.ZeroMemory(_managedBuffer);
+            _managedBuffer = null;
+        }
+
+        _size = 0;
+        _isDisposed = true;
+        _isProtected = false;
     }
 }
 
@@ -329,7 +344,7 @@ public sealed class SecureSession : IDisposable
     private DateTime _createdAt;
     private readonly TimeSpan _maxLifetime;
     private bool _isDisposed;
-    private static readonly object _lockObj = new();
+    private readonly object _lockObj = new();
 
     public SecureSession(int keySizeBytes = 32, TimeSpan? maxLifetime = null)
     {
@@ -404,8 +419,5 @@ public sealed class SecureSession : IDisposable
         }
     }
 
-    ~SecureSession()
-    {
-        Dispose();
-    }
+    // No finalizer: the master key buffer cleans up after itself.
 }

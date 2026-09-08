@@ -369,8 +369,6 @@ public sealed class AuditService : IDisposable
         set => _loggingEnabled = value;
     }
 
-    ~AuditService()
-    {
-        Dispose();
-    }
+    // No finalizer: Dispose clears the static Instance, which the finalizer thread
+    // must not race the application for.
 }

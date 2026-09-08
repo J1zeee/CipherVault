@@ -16,10 +16,10 @@ public class PasswordGeneratorTests
         {
             var password = _generator.Generate(length: 4);
 
-            Assert.True(password.Any(char.IsLower), $"no lowercase in '{password}'");
-            Assert.True(password.Any(char.IsUpper), $"no uppercase in '{password}'");
-            Assert.True(password.Any(char.IsDigit), $"no digit in '{password}'");
-            Assert.True(password.Any(c => !char.IsLetterOrDigit(c)), $"no special in '{password}'");
+            Assert.Contains(password, char.IsLower);
+            Assert.Contains(password, char.IsUpper);
+            Assert.Contains(password, char.IsDigit);
+            Assert.Contains(password, c => !char.IsLetterOrDigit(c));
         }
     }
 
@@ -30,10 +30,10 @@ public class PasswordGeneratorTests
         {
             var password = _generator.Generate(length: 16);
 
-            Assert.True(password.Any(char.IsLower));
-            Assert.True(password.Any(char.IsUpper));
-            Assert.True(password.Any(char.IsDigit));
-            Assert.True(password.Any(c => !char.IsLetterOrDigit(c)));
+            Assert.Contains(password, char.IsLower);
+            Assert.Contains(password, char.IsUpper);
+            Assert.Contains(password, char.IsDigit);
+            Assert.Contains(password, c => !char.IsLetterOrDigit(c));
         }
     }
 

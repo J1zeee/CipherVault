@@ -15,7 +15,7 @@ public class Credential : INotifyPropertyChanged, IDisposable
     private SecureBuffer? _websiteBuffer;
     private SecureBuffer? _notesBuffer;
     private bool _isDisposed;
-    private static readonly object _lockObj = new();
+    private readonly object _lockObj = new();
 
     [JsonIgnore]
     public string Title
@@ -268,10 +268,9 @@ public class Credential : INotifyPropertyChanged, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~Credential()
-    {
-        Dispose();
-    }
+    // No finalizer: Dispose raises PropertyChanged straight into WPF bindings, which
+    // must never happen on the finalizer thread. The pinned memory behind each field
+    // belongs to SecureBuffer, which has its own finalizer for exactly that purpose.
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
