@@ -1,5 +1,19 @@
 # CipherVault Fluent UI Redesign — Implementation Plan
 
+> **ABANDONED 2026-09-09.** The visual rebuild was reverted at the user's
+> request: adopting the WPF UI design system produced a grey, Windows-styled
+> look with buttons that followed the Windows personalization colour, and the
+> user wanted the opposite - a uniform, minimal, near-black interface with no
+> imported colour. Tasks 2, 3 and 8 were reverted and the package removed.
+>
+> What was kept, because it is functionality rather than styling: the
+> screen-capture toggle (Tasks 4 and 5), the crack-time localization (Task 6),
+> the entropy and crack-time readout (Task 7), and the master-password guard
+> test (Task 1).
+>
+> Anything below about WPF UI, FluentWindow, Fluent icons or animations
+> describes work that no longer exists in the codebase.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild CipherVault's interface on the WPF UI design system with smooth animations, vector icons, a screen-capture toggle, and a visible entropy/crack-time readout — without weakening any security property.
