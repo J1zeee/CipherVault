@@ -524,6 +524,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         VaultPathBrowseBtn.Content = loc["Browse"];
         VaultPathResetBtn.Content = loc["ResetDefault"];
         SettingsLoggingTitle.Text = loc["Logging"];
+        SettingsSecurityTitle.Text = loc["SecuritySection"];
+        ScreenCaptureProtectionHint.Text = loc["ScreenCaptureProtectionHint"];
         LoggingEnabledLabel.Text = loc["EnableLogging"];
         ScreenCaptureProtectionLabel.Text = loc["ScreenCaptureProtection"];
         OpenLogsFolderBtn.Content = loc["OpenLogsFolder"];

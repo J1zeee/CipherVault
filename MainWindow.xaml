@@ -56,10 +56,17 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="CipherVault" ShowMaximize="True" ShowMinimize="True">
-            <ui:TitleBar.Icon>
-                <ui:SymbolIcon Symbol="ShieldKeyhole24"/>
-            </ui:TitleBar.Icon>
+        <ui:TitleBar Grid.Row="0" Height="36" ShowMaximize="True" ShowMinimize="True"
+                     VerticalAlignment="Top" Padding="0">
+            <ui:TitleBar.Header>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center" Margin="12,0,0,0">
+                    <ui:SymbolIcon Symbol="ShieldKeyhole24" FontSize="16" Margin="0,0,8,0"
+                                   VerticalAlignment="Center"/>
+                    <TextBlock Text="CipherVault" FontSize="13" FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </ui:TitleBar.Header>
         </ui:TitleBar>
 
         <!-- Settings Panel -->
@@ -123,6 +130,32 @@
                     </Grid>
                 </Border>
 
+                <TextBlock x:Name="SettingsSecurityTitle" Text="Security" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,32,0,12"/>
+
+                <Border Background="{StaticResource CardBackgroundBrush}" CornerRadius="12" Padding="20">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                            <TextBlock x:Name="ScreenCaptureProtectionLabel"
+                                       Text="Block screenshots and screen sharing" FontSize="14"
+                                       Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="ScreenCaptureProtectionHint"
+                                       Text="The window stays black in screenshots, screen sharing and recordings."
+                                       FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </StackPanel>
+                        <CheckBox Grid.Column="1" x:Name="ScreenCaptureProtectionCheckBox"
+                                  VerticalAlignment="Center"
+                                  Style="{StaticResource ModernCheckBox}"
+                                  Checked="ScreenCaptureProtectionCheckBox_Changed"
+                                  Unchecked="ScreenCaptureProtectionCheckBox_Changed"/>
+                    </Grid>
+                </Border>
+
                 <TextBlock x:Name="SettingsLoggingTitle" Text="Logging" FontSize="16" FontWeight="SemiBold"
                            Foreground="{StaticResource TextPrimaryBrush}" Margin="0,32,0,12"/>
 
@@ -137,21 +170,6 @@
                                        Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                             <CheckBox Grid.Column="1" x:Name="LoggingEnabledCheckBox" Style="{StaticResource ModernCheckBox}"
                                       Checked="LoggingEnabledCheckBox_Changed" Unchecked="LoggingEnabledCheckBox_Changed"/>
-                        </Grid>
-
-                        <Grid Margin="0,12,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" x:Name="ScreenCaptureProtectionLabel"
-                                       Text="Block screenshots and screen sharing" FontSize="14"
-                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"
-                                       TextWrapping="Wrap" Margin="0,0,12,0"/>
-                            <CheckBox Grid.Column="1" x:Name="ScreenCaptureProtectionCheckBox"
-                                      Style="{StaticResource ModernCheckBox}"
-                                      Checked="ScreenCaptureProtectionCheckBox_Changed"
-                                      Unchecked="ScreenCaptureProtectionCheckBox_Changed"/>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
@@ -750,7 +768,8 @@
                 </Border.Effect>
                 <StackPanel>
                     <TextBlock x:Name="DialogTitle" Text="Warning" FontSize="20" FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12"/>
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12"
+                               TextWrapping="Wrap"/>
                     <TextBlock x:Name="DialogMessage" Text="" FontSize="14"
                                Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,28"
                                TextWrapping="Wrap" LineHeight="20"/>
