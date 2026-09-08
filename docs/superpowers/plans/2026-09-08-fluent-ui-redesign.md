@@ -834,11 +834,19 @@ presentation layer does the joining."
 
 ---
 
-### Task 7: Show entropy and crack time under the strength meter
+### Task 7: Show entropy and crack time — in the generator and on a saved credential
+
+Requested during execution: the readout belongs in two places, not one. The
+generator answers "is the password I am about to use any good"; the credential
+details pane answers "is the password I saved months ago still any good".
+
+Adding it to the details pane exposes nothing new — `ShowCredentialDetails`
+already reads `credential.Password` to render the masking dots, and
+`AnalyzeStrength` neither stores nor transmits what it is given.
 
 **Files:**
-- Modify: `MainWindow.xaml` (`GeneratorPanel`, under the strength meter)
-- Modify: `MainWindow.xaml.cs` (`UpdateStrengthIndicator`)
+- Modify: `MainWindow.xaml` (`GeneratorPanel` under the strength meter; the credential details pane)
+- Modify: `MainWindow.xaml.cs` (`UpdateStrengthIndicator`, `ShowCredentialDetails`)
 - Modify: `Services/LocalizationService.cs` (one key, both languages)
 
 **Interfaces:**
@@ -884,7 +892,40 @@ At the end of `UpdateStrengthIndicator` in `MainWindow.xaml.cs`, after the exist
         }
 ```
 
-- [ ] **Step 4: Build and run the suite**
+- [ ] **Step 4: Show the same readout on a saved credential**
+
+Add a second `TextBlock` to the credential details pane, directly under the
+password row:
+
+```xml
+<TextBlock x:Name="CredentialPasswordMetrics" FontSize="12" Margin="0,4,0,0"
+           Foreground="{StaticResource TextSecondaryBrush}"/>
+```
+
+Extract the formatting so both call sites share it, rather than duplicating the
+`string.Format` pair:
+
+```csharp
+    private string FormatPasswordMetrics(string password)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            return "";
+        }
+
+        var result = _passwordGenerator.AnalyzeStrength(password);
+        var crackTime = string.Format(_localization[result.CrackTime.UnitKey], result.CrackTime.Amount);
+
+        return string.Format(_localization["PasswordMetrics"], result.EntropyBits, crackTime);
+    }
+```
+
+Use it from `UpdateStrengthIndicator` for `PasswordMetrics`, and from
+`ShowCredentialDetails` for `CredentialPasswordMetrics` with
+`credential.Password`. In `ShowCredentialDetails` the password is already read to
+build the masking dots, so this adds no new exposure.
+
+- [ ] **Step 5: Build and run the suite**
 
 ```bash
 dotnet build CipherVault.sln --no-incremental
@@ -893,15 +934,19 @@ dotnet test CipherVault.Tests/CipherVault.Tests.csproj
 
 Expected: `Ошибок: 0`; all PASS.
 
-- [ ] **Step 5: Verify by hand**
+- [ ] **Step 6: Verify by hand**
 
 Launch, unlock a vault, open the generator. Confirm: a 16-character password with all classes shows roughly `103 bits · cracked in 3M+ years`; typing a short weak password drops both figures; clearing the field empties the line; switching to Russian shows `бит · взлом за`.
 
-- [ ] **Step 6: Commit**
+Then select a saved credential and confirm the same line appears under its
+password, and that selecting a credential with a weak password shows a
+correspondingly small figure.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add MainWindow.xaml MainWindow.xaml.cs Services/LocalizationService.cs
-git commit -m "Show entropy and crack time under the strength meter
+git commit -m "Show entropy and crack time for generated and saved passwords
 
 Both figures were computed and thrown away - only Score was ever read."
 ```
