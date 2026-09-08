@@ -937,6 +937,13 @@ Keep the five accent colours as literal hex — the library has no equivalent fo
 
 If a `DynamicResource` key above does not resolve at runtime (the control renders transparent or black), find the actual key by opening `Wpf.Ui`'s theme dictionary in the NuGet package and use the real name; do not fall back to hardcoding a colour.
 
+**Confirmed during Task 2 by probing the merged dictionaries directly:**
+`ControlsDictionary` carries implicit styles for `Button`, `TextBox`, `PasswordBox`,
+`CheckBox`, `ComboBox`, `Slider`, `ListBox` and `ProgressBar`. Deleting our styles
+therefore leaves those controls styled, not bare. It also means the **native**
+`PasswordBox` gets the Fluent look without being swapped for `ui:PasswordBox`, so
+the security carve-out costs nothing visually.
+
 - [ ] **Step 2: Delete the control styles the library now provides**
 
 Remove these styles and let the library's implicit styles apply: `ModernTextBox`, `ModernComboBox`, `ModernComboBoxItem`, `ModernCheckBox`, `ModernSlider`, `PrimaryButton`, `SecondaryButton`, `DangerButton`, `IconButton`.
