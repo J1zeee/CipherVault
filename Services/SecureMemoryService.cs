@@ -1,10 +1,17 @@
-using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace CipherVault.Services;
 
-public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
+/// <summary>
+/// Deliberately NOT an IMemoryOwner&lt;byte&gt;. Handing out a Memory&lt;byte&gt; over this
+/// buffer would let the plaintext view be stored in a field or carried across an
+/// await, and read after EndAccess has re-encrypted the contents or after Dispose has
+/// released the page - a read of freed unmanaged memory that nothing can detect.
+/// Span&lt;byte&gt; is a ref struct, so the compiler enforces what this type needs: the
+/// view cannot outlive the BeginAccess/EndAccess window it was taken in.
+/// </summary>
+public sealed class SecureBuffer : IDisposable
 {
     private IntPtr _ptr;
     private int _size;
@@ -12,7 +19,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
     private bool _isLocked;
     private bool _isProtected;
     private readonly object _lockObj = new();
-    private byte[]? _managedBuffer;
 
     private const int MEM_COMMIT = 0x1000;
     private const int MEM_RESERVE = 0x2000;
@@ -45,7 +51,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             throw new ArgumentOutOfRangeException(nameof(sizeInBytes));
 
         _size = sizeInBytes;
-        _managedBuffer = new byte[sizeInBytes];
         _ptr = VirtualAlloc(IntPtr.Zero, sizeInBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
         if (_ptr == IntPtr.Zero)
@@ -53,15 +58,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
 
         GC.AddMemoryPressure(sizeInBytes);
         Lock();
-    }
-
-    public Memory<byte> Memory
-    {
-        get
-        {
-            ThrowIfDisposed();
-            return _managedBuffer.AsMemory(0, _size);
-        }
     }
 
     public Span<byte> Span
@@ -272,12 +268,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             VirtualFree(_ptr, 0, MEM_RELEASE);
             _ptr = IntPtr.Zero;
             GC.RemoveMemoryPressure(sizeToRelease);
-        }
-
-        if (_managedBuffer != null)
-        {
-            CryptographicOperations.ZeroMemory(_managedBuffer);
-            _managedBuffer = null;
         }
 
         _size = 0;
