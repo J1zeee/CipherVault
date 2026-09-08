@@ -11,6 +11,13 @@ public class PasswordGenerator
     private const string DigitChars = "0123456789";
     private const string SpecialChars = "!@#$%^&*()_+-=[]{}|;:,.<>?";
     
+    /// <summary>
+    /// Guesses per second assumed when converting entropy into a crack time: an
+    /// offline attack with commodity GPUs against a fast hash. Any such number is a
+    /// model, not a measurement - it is stated here so the figure can be judged.
+    /// </summary>
+    public const double GuessesPerSecond = 1e10;
+
     private const string AmbiguousLower = "l";
     private const string AmbiguousUpper = "IO";
     private const string AmbiguousDigits = "0O";
@@ -100,43 +107,56 @@ public class PasswordGenerator
             result[i] = poolSpan[RandomNumberGenerator.GetInt32(poolSpan.Length)];
         }
 
-        var guaranteedPositions = new List<(int pos, char c)>();
-        
+        // One character from each enabled class, placed at DISTINCT positions. Choosing
+        // each position independently let them collide, which silently dropped whole
+        // character classes from the result.
+        var required = new List<char>();
+
         if (includeLowercase)
         {
-            var chars = excludeAmbiguous 
-                ? RemoveChars(LowercaseChars, AmbiguousLower) 
-                : LowercaseChars;
-            guaranteedPositions.Add((RandomNumberGenerator.GetInt32(length), chars[RandomNumberGenerator.GetInt32(chars.Length)]));
-        }
-        
-        if (includeUppercase)
-        {
-            var chars = excludeAmbiguous 
-                ? RemoveChars(UppercaseChars, AmbiguousUpper) 
-                : UppercaseChars;
-            guaranteedPositions.Add((RandomNumberGenerator.GetInt32(length), chars[RandomNumberGenerator.GetInt32(chars.Length)]));
-        }
-        
-        if (includeDigits)
-        {
-            var chars = excludeAmbiguous 
-                ? RemoveChars(DigitChars, AmbiguousDigits) 
-                : DigitChars;
-            guaranteedPositions.Add((RandomNumberGenerator.GetInt32(length), chars[RandomNumberGenerator.GetInt32(chars.Length)]));
-        }
-        
-        if (includeSpecial)
-        {
-            guaranteedPositions.Add((RandomNumberGenerator.GetInt32(length), SpecialChars[RandomNumberGenerator.GetInt32(SpecialChars.Length)]));
+            var chars = excludeAmbiguous ? RemoveChars(LowercaseChars, AmbiguousLower) : LowercaseChars;
+            required.Add(chars[RandomNumberGenerator.GetInt32(chars.Length)]);
         }
 
-        foreach (var (pos, c) in guaranteedPositions)
+        if (includeUppercase)
         {
-            result[pos] = c;
+            var chars = excludeAmbiguous ? RemoveChars(UppercaseChars, AmbiguousUpper) : UppercaseChars;
+            required.Add(chars[RandomNumberGenerator.GetInt32(chars.Length)]);
+        }
+
+        if (includeDigits)
+        {
+            var chars = excludeAmbiguous ? RemoveChars(DigitChars, AmbiguousDigits) : DigitChars;
+            required.Add(chars[RandomNumberGenerator.GetInt32(chars.Length)]);
+        }
+
+        if (includeSpecial)
+        {
+            required.Add(SpecialChars[RandomNumberGenerator.GetInt32(SpecialChars.Length)]);
+        }
+
+        var positions = new int[length];
+        for (int i = 0; i < length; i++) positions[i] = i;
+        Shuffle(positions);
+
+        // When the password is shorter than the number of classes, only as many as fit
+        // can be guaranteed.
+        var guaranteed = Math.Min(required.Count, length);
+        for (int i = 0; i < guaranteed; i++)
+        {
+            result[positions[i]] = required[i];
         }
 
         return new string(result);
+    }
+
+    private static void Shuffle(int[] values)
+    {
+        for (int i = values.Length - 1; i > 0; i--)
+        {
+            int j = RandomNumberGenerator.GetInt32(i + 1);
+            (values[i], values[j]) = (values[j], values[i]);
+        }
     }
 
     private static string RemoveChars(string source, string charsToRemove)
@@ -170,11 +190,8 @@ public class PasswordGenerator
         }
 
         var suggestions = new List<string>();
-        
-        // Расчёт базовой энтропии (для отображения, не для score)
-        //var entropyResult = CalculateEntropy(password);
-        //double rawEntropy = entropyResult.Entropy;
-        int poolSize = 26; // Assume lowercase only by default
+
+        var (rawEntropy, poolSize) = CalculateEntropy(password);
         
         // Проверка на словарные слова
         var dictionaryPenalty = CheckDictionaryWords(password);
@@ -244,9 +261,14 @@ public class PasswordGenerator
             suggestions.Add("Consider using 12+ characters for better security");
         }
         
-        // Для crack time - используем простую оценку
-        double crackTimeSeconds = Math.Pow(50, password.Length) / 1e10 / 2;
-        
+        // Crack time follows from the entropy the password actually has, minus the bits
+        // the dictionary and pattern matches hand to an attacker. The previous formula
+        // used a fixed alphabet of 50, so "aaaaaaaa" scored the same as "aB3!dE7@".
+        double effectiveEntropy = Math.Max(0, rawEntropy - patternPenalty - dictionaryPenalty);
+
+        // Expect to search half the space before hitting the answer.
+        double crackTimeSeconds = Math.Pow(2, effectiveEntropy - 1) / GuessesPerSecond;
+
         if (double.IsInfinity(crackTimeSeconds) || crackTimeSeconds > 1e15)
             crackTimeSeconds = 1e15;
         
@@ -254,15 +276,6 @@ public class PasswordGenerator
         if (!hasUpper) suggestions.Add("Add uppercase letters");
         if (!hasDigit) suggestions.Add("Add numbers");
         if (!hasSpecial) suggestions.Add("Add special characters (!@#$)");
-        
-        if (dictionaryPenalty > 0)
-        {
-            suggestions.Add("Avoid common words and passwords");
-        }
-        if (patternPenalty > 0)
-        {
-            suggestions.Add("Avoid keyboard patterns");
-        }
         
         string label = score switch
         {
@@ -276,13 +289,13 @@ public class PasswordGenerator
         return new PasswordStrengthResult
         {
             Score = score,
-            Entropy = 0,
-            EntropyBits = 0,
+            Entropy = rawEntropy,
+            EntropyBits = (int)Math.Round(rawEntropy),
             CrackTimeSeconds = crackTimeSeconds,
             CrackTimeDisplay = FormatCrackTime(crackTimeSeconds),
             PoolSize = poolSize,
             Label = label,
-            Suggestions = suggestions,
+            Suggestions = suggestions.Distinct().ToList(),
             HasLowercase = hasLower,
             HasUppercase = hasUpper,
             HasDigits = hasDigit,
@@ -353,6 +366,9 @@ public class PasswordGenerator
         return false;
     }
     
+    /// <summary>Keys in an unbroken run before it counts as a keyboard walk.</summary>
+    private const int MinKeyboardWalkLength = 4;
+
     private bool HasAdjacentKeys(string password)
     {
         // QWERTY keyboard layout - keys close to each other
@@ -386,21 +402,29 @@ public class PasswordGenerator
             {'m', new[] {'j', 'k', 'n'}},
         };
         
-        int adjacentCount = 0;
-        
+        // A keyboard walk is an UNBROKEN run of neighbouring keys such as "asdf".
+        // Counting scattered pairs instead flagged roughly a third of the passwords
+        // this very generator produces, because any two neighbouring letters anywhere
+        // in a random 16-character string were enough.
+        int runLength = 1;
+
         for (int i = 0; i < password.Length - 1; i++)
         {
             char c1 = password[i];
             char c2 = password[i + 1];
-            
+
             if (adjacentKeys.TryGetValue(c1, out var adjacent) && adjacent.Contains(c2))
             {
-                adjacentCount++;
-                if (adjacentCount >= 2) // Found 2+ adjacent pairs
+                runLength++;
+                if (runLength >= MinKeyboardWalkLength)
                     return true;
             }
+            else
+            {
+                runLength = 1;
+            }
         }
-        
+
         return false;
     }
        
