@@ -15,7 +15,7 @@ using Microsoft.Win32;
 
 namespace CipherVault;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private StorageService _storageService;
     private readonly PasswordGenerator _passwordGenerator;
@@ -319,17 +319,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 2)
-        {
-            Maximize_Click(sender, e);
-        }
-        else if (e.LeftButton == MouseButtonState.Pressed)
-        {
-            DragMove();
-        }
-    }
 
     private static bool TrySetCaptureAffinity(IntPtr handle, uint affinity)
     {
@@ -442,7 +431,6 @@ public partial class MainWindow : Window
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         HookDropDowns();
-        UpdateMaximizeButton();
         UpdateUIText();
         RefreshVaultList();
         
@@ -461,44 +449,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_StateChanged(object sender, EventArgs e)
-    {
-        UpdateMaximizeButton();
-    }
 
-    private void UpdateMaximizeButton()
-    {
-        if (WindowState == WindowState.Maximized)
-        {
-            MaximizeBtn.Content = "\u2752";
-        }
-        else
-        {
-            MaximizeBtn.Content = "\u25A1";
-        }
-    }
 
-    private void Minimize_Click(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState.Minimized;
-    }
 
-    private void Maximize_Click(object sender, RoutedEventArgs e)
-    {
-        if (WindowState == WindowState.Maximized)
-        {
-            WindowState = WindowState.Normal;
-        }
-        else
-        {
-            WindowState = WindowState.Maximized;
-        }
-    }
 
-    private void Close_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
 
     private void UpdateUIText()
     {
