@@ -32,15 +32,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly AppSettingsStore _settings;
     private VaultInfo? _selectedVault;
 
-    private const uint WDA_MONITOR = 0x00000001;
-    private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
 
-    // Downgraded to WDA_MONITOR once if the OS is older than Windows 10 2004.
-    private static uint _captureAffinity = WDA_EXCLUDEFROMCAPTURE;
+    // Cleared once if the OS is older than Windows 10 2004 and cannot exclude from capture.
+    private static bool _excludeFromCaptureSupported = true;
+    private static bool _screenCaptureProtectionEnabled = true;
+
+    private static uint CurrentCaptureAffinity =>
+        ScreenCaptureAffinity.For(_screenCaptureProtectionEnabled, _excludeFromCaptureSupported);
 
     private const int AutoLockTimeoutMinutes = 1;
     private const int ClipboardClearSeconds = 10;
@@ -73,6 +75,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // Logging is a persisted preference; it used to reset to off on every start
         // while the checkbox still claimed to remember it.
         AuditService.LoggingEnabled = _settings.GetBool(AppSettingsStore.LoggingEnabledKey);
+        _screenCaptureProtectionEnabled =
+            _settings.GetBool(AppSettingsStore.ScreenCaptureProtectionKey, defaultValue: true);
 
         _vaultPaths = new VaultPaths(GetDefaultVaultRoot());
         LoadPathSettings();
@@ -345,7 +349,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (source is HwndSource hwndSource && !hwndSource.IsDisposed)
             {
-                TrySetCaptureAffinity(hwndSource.Handle, _captureAffinity);
+                TrySetCaptureAffinity(hwndSource.Handle, CurrentCaptureAffinity);
             }
         }
     }
@@ -406,7 +410,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         var handle = new WindowInteropHelper(this).Handle;
 
-        if (TrySetCaptureAffinity(handle, _captureAffinity))
+        if (TrySetCaptureAffinity(handle, CurrentCaptureAffinity))
         {
             return;
         }
@@ -414,10 +418,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // WDA_EXCLUDEFROMCAPTURE needs Windows 10 2004 (build 19041). On older builds
         // fall back to WDA_MONITOR: capture APIs still get a black window, only DWM
         // thumbnails stay visible.
-        if (_captureAffinity == WDA_EXCLUDEFROMCAPTURE
-            && TrySetCaptureAffinity(handle, WDA_MONITOR))
+        if (_excludeFromCaptureSupported
+            && _screenCaptureProtectionEnabled
+            && TrySetCaptureAffinity(handle, ScreenCaptureAffinity.Monitor))
         {
-            _captureAffinity = WDA_MONITOR;
+            _excludeFromCaptureSupported = false;
         }
     }
 
@@ -520,6 +525,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         VaultPathResetBtn.Content = loc["ResetDefault"];
         SettingsLoggingTitle.Text = loc["Logging"];
         LoggingEnabledLabel.Text = loc["EnableLogging"];
+        ScreenCaptureProtectionLabel.Text = loc["ScreenCaptureProtection"];
         OpenLogsFolderBtn.Content = loc["OpenLogsFolder"];
         ClearLogsBtn.Content = loc["ClearLogs"];
         SettingsImportExportTitle.Text = loc["ImportExport"];
@@ -1320,6 +1326,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         LoadPathSettings();
         LoggingEnabledCheckBox.IsChecked = AuditService.LoggingEnabled;
+        ScreenCaptureProtectionCheckBox.IsChecked = _screenCaptureProtectionEnabled;
     }
 
     private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1382,6 +1389,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     private Action? _dialogConfirmAction;
+    private Action? _dialogCancelAction;
 
     private void ShowDialog(string title, string message)
     {
@@ -1396,7 +1404,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DialogOkBtn.Focus();
     }
 
-    private void ShowConfirmDialog(string title, string message, Action onConfirm)
+    private void ShowConfirmDialog(string title, string message, Action onConfirm, Action? onCancel = null)
     {
         DialogTitle.Text = title;
         DialogMessage.Text = message;
@@ -1406,6 +1414,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DialogOverlay.Visibility = Visibility.Visible;
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = onConfirm;
+        _dialogCancelAction = onCancel;
         DialogOkBtn.Focus();
     }
 
@@ -1429,6 +1438,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DialogOkBtn.Width = 140;
         DialogCancelBtn.Width = 140;
         DialogVaultComboBox.Visibility = Visibility.Collapsed;
+        _dialogCancelAction = null;
         _dialogConfirmAction?.Invoke();
         _dialogConfirmAction = null;
         _exportAction?.Invoke();
@@ -1444,7 +1454,44 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DialogCancelBtn.Width = 140;
         DialogVaultComboBox.Visibility = Visibility.Collapsed;
         _dialogConfirmAction = null;
+        _dialogCancelAction?.Invoke();
+        _dialogCancelAction = null;
         _exportAction = null;
+    }
+
+    private void ScreenCaptureProtectionCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        var enabled = ScreenCaptureProtectionCheckBox.IsChecked == true;
+
+        if (enabled == _screenCaptureProtectionEnabled)
+        {
+            // Fired by loading the setting into the UI, not by the user.
+            return;
+        }
+
+        if (enabled)
+        {
+            ApplyScreenCaptureProtection(true);
+            return;
+        }
+
+        // Turning it off is a downgrade, so it is confirmed; turning it on is not.
+        var loc = _localization;
+        ShowConfirmDialog(
+            loc["ScreenCaptureProtectionOffTitle"],
+            loc["ScreenCaptureProtectionOffWarning"],
+            () => ApplyScreenCaptureProtection(false),
+            () => ScreenCaptureProtectionCheckBox.IsChecked = true);
+    }
+
+    private void ApplyScreenCaptureProtection(bool enabled)
+    {
+        _screenCaptureProtectionEnabled = enabled;
+        _settings.SetBool(AppSettingsStore.ScreenCaptureProtectionKey, enabled);
+
+        // Reapplies to every window the app owns. The periodic sweep reads the same
+        // flag, so it will not quietly restore protection a moment after this.
+        ProtectAllAppWindows();
     }
 
     private void LoggingEnabledCheckBox_Changed(object sender, RoutedEventArgs e)

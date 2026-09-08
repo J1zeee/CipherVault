@@ -14,6 +14,7 @@ public sealed class AppSettingsStore
 {
     public const string VaultPathKey = "vaultPath";
     public const string LoggingEnabledKey = "loggingEnabled";
+    public const string ScreenCaptureProtectionKey = "screenCaptureProtection";
 
     private readonly string _path;
 
