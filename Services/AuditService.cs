@@ -69,6 +69,12 @@ public sealed class AuditService : IDisposable
         _maxLogSizeBytes = maxLogSizeBytes;
     }
 
+    /// <summary>Full path of the file this service writes to.</summary>
+    public string LogFilePath => _auditPath;
+
+    /// <summary>Folder holding the log files.</summary>
+    public string LogFolderPath => Path.GetDirectoryName(_auditPath) ?? "";
+
     public void LogEvent(AuditEventType eventType, string message, string? additionalInfo = null)
     {
         if (_isDisposed || !LoggingEnabled) return;
@@ -128,19 +134,22 @@ public sealed class AuditService : IDisposable
         LogEvent(AuditEventType.VaultUnlocked, "Vault unlocked");
     }
 
-    public void LogCredentialAdded(string title)
+    // These deliberately take no credential text. The vault is encrypted, so a
+    // plaintext log recording which services the user has accounts with would leak
+    // exactly what the encryption is there to protect.
+    public void LogCredentialAdded()
     {
-        LogEvent(AuditEventType.CredentialAdded, $"Credential added: {title}");
+        LogEvent(AuditEventType.CredentialAdded, "Credential added");
     }
 
-    public void LogCredentialModified(string title)
+    public void LogCredentialModified()
     {
-        LogEvent(AuditEventType.CredentialModified, $"Credential modified: {title}");
+        LogEvent(AuditEventType.CredentialModified, "Credential modified");
     }
 
-    public void LogCredentialDeleted(string title)
+    public void LogCredentialDeleted()
     {
-        LogEvent(AuditEventType.CredentialDeleted, $"Credential deleted: {title}");
+        LogEvent(AuditEventType.CredentialDeleted, "Credential deleted");
     }
 
     public void LogPasswordGenerated()

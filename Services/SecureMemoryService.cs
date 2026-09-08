@@ -76,6 +76,13 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
         }
     }
 
+    /// <summary>
+    /// True while the page is pinned in RAM by VirtualLock. Plaintext must never sit
+    /// on an unpinned page - Windows is free to write such a page to the swap file,
+    /// where the key outlives the process.
+    /// </summary>
+    public bool IsPagePinned => _isLocked;
+
     public void Clear()
     {
         ThrowIfDisposed();
@@ -89,9 +96,8 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
         if (data.Length > _size)
             throw new ArgumentException("Data too large for buffer");
 
-        Unlock();
-        data.CopyTo(GetSpan().Slice(0, data.Length));
         Lock();
+        data.CopyTo(GetSpan().Slice(0, data.Length));
     }
 
     public void Write(byte[] data)
@@ -110,31 +116,35 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
     public void FillRandom()
     {
         ThrowIfDisposed();
-        Unlock();
-        RandomNumberGenerator.Fill(GetSpan());
         Lock();
+        RandomNumberGenerator.Fill(GetSpan());
     }
 
     public Span<byte> GetWritableSpan()
     {
         ThrowIfDisposed();
-        Unlock();
+        Lock();
         unsafe
         {
             return new Span<byte>(_ptr.ToPointer(), _size);
         }
     }
 
-    public void CommitAndProtect()
+    /// <summary>
+    /// Makes the content readable. The page stays pinned in RAM for the whole
+    /// lifetime of the buffer; only the CryptProtectMemory layer is toggled.
+    /// </summary>
+    public void BeginAccess()
+    {
+        UnprotectMemory();
+        Lock();
+    }
+
+    /// <summary>Re-encrypts the content in place once the caller is done with it.</summary>
+    public void EndAccess()
     {
         Lock();
         ProtectMemory();
-    }
-
-    public void UnprotectAndUnlock()
-    {
-        UnprotectMemory();
-        Unlock();
     }
 
     public void ProtectMemory()
@@ -151,7 +161,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             {
                 if (CryptProtectMemory(_ptr, (uint)_size, CRYPTPROTECTMEMORY_SAME_PROCESS))
                 {
-                    Unlock();
                     _isProtected = true;
                 }
             }
@@ -348,10 +357,10 @@ public sealed class SecureSession : IDisposable
         return _masterKey!.GetWritableSpan();
     }
 
-    public void CommitAndProtect()
+    public void EndAccess()
     {
         ThrowIfDisposed();
-        _masterKey!.CommitAndProtect();
+        _masterKey!.EndAccess();
     }
 
     public bool IsExpired => DateTime.UtcNow - _createdAt > _maxLifetime;

@@ -79,7 +79,7 @@ public class SecureInputBox : Control
         {
             if (_secureBuffer == null || _isDisposed) return;
 
-            _secureBuffer.UnprotectAndUnlock();
+            _secureBuffer.BeginAccess();
             
             var bytes = System.Text.Encoding.UTF8.GetBytes(plainText ?? "");
             if (bytes.Length > 0)
@@ -89,7 +89,7 @@ public class SecureInputBox : Control
                 Array.Clear(bytes, 0, bytes.Length);
             }
             
-            _secureBuffer.CommitAndProtect();
+            _secureBuffer.EndAccess();
             SecureTextChanged?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -102,10 +102,10 @@ public class SecureInputBox : Control
 
             try
             {
-                _secureBuffer.UnprotectAndUnlock();
+                _secureBuffer.BeginAccess();
                 var span = _secureBuffer.Span;
                 var result = System.Text.Encoding.UTF8.GetString(span);
-                _secureBuffer.CommitAndProtect();
+                _secureBuffer.EndAccess();
                 return result;
             }
             catch
@@ -123,9 +123,9 @@ public class SecureInputBox : Control
             
             try
             {
-                _secureBuffer.UnprotectAndUnlock();
+                _secureBuffer.BeginAccess();
                 var result = _secureBuffer.ToArray();
-                _secureBuffer.CommitAndProtect();
+                _secureBuffer.EndAccess();
                 return result;
             }
             catch
@@ -142,16 +142,16 @@ public class SecureInputBox : Control
             if (_secureBuffer == null || _isDisposed)
                 return Span<byte>.Empty;
 
-            _secureBuffer.UnprotectAndUnlock();
+            _secureBuffer.BeginAccess();
             return _secureBuffer.Span;
         }
     }
 
-    public void CommitAndProtect()
+    public void EndAccess()
     {
         lock (_lockObj)
         {
-            _secureBuffer?.CommitAndProtect();
+            _secureBuffer?.EndAccess();
         }
     }
 
@@ -161,9 +161,9 @@ public class SecureInputBox : Control
         {
             if (_secureBuffer == null || _isDisposed) return;
 
-            _secureBuffer.UnprotectAndUnlock();
+            _secureBuffer.BeginAccess();
             _secureBuffer.Clear();
-            _secureBuffer.CommitAndProtect();
+            _secureBuffer.EndAccess();
             
             Dispatcher.BeginInvoke(() => Text = "");
         }
@@ -175,7 +175,7 @@ public class SecureInputBox : Control
         {
             if (_secureBuffer == null || _isDisposed) return;
 
-            _secureBuffer.UnprotectAndUnlock();
+            _secureBuffer.BeginAccess();
             _secureBuffer.Clear();
             
             if (data != null && length > 0 && length <= 512)
@@ -184,7 +184,7 @@ public class SecureInputBox : Control
                 data.AsSpan(0, length).CopyTo(span);
             }
             
-            _secureBuffer.CommitAndProtect();
+            _secureBuffer.EndAccess();
             
             Dispatcher.BeginInvoke(() => 
             {

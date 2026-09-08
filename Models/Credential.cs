@@ -116,11 +116,11 @@ public class Credential : INotifyPropertyChanged, IDisposable
             {
                 try
                 {
-                    buffer.UnprotectAndUnlock();
+                    buffer.BeginAccess();
                     var span = buffer.Span;
                     var result = System.Text.Encoding.UTF8.GetString(span);
                     result = result.TrimEnd('\0');
-                    buffer.CommitAndProtect();
+                    buffer.EndAccess();
                     
                     return result;
                 }
@@ -152,7 +152,7 @@ public class Credential : INotifyPropertyChanged, IDisposable
                 var paddedLength = ((bytes.Length + 15) / 16) * 16;
                 var buffer = SecureMemory.Allocate(paddedLength);
                 buffer.Write(bytes);
-                buffer.CommitAndProtect();
+                buffer.EndAccess();
 
                 CryptographicOperations.ZeroMemory(bytes);
                 Array.Clear(bytes, 0, bytes.Length);

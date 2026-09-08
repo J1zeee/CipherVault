@@ -91,15 +91,15 @@ public class StorageService : IDisposable
         }.GetBytes(KeySizeBytes);
         key.Write(derivedBytes);
         CryptographicOperations.ZeroMemory(derivedBytes);
-        key.CommitAndProtect();
+        key.EndAccess();
         return key;
     }
 
     private static byte[] UnlockAndCopy(SecureBuffer buffer)
     {
-        buffer.UnprotectAndUnlock();
+        buffer.BeginAccess();
         var copy = buffer.ToArray();
-        buffer.CommitAndProtect();
+        buffer.EndAccess();
         return copy;
     }
 
@@ -109,7 +109,7 @@ public class StorageService : IDisposable
         var derivedBytes = HKDF.Expand(HashAlgorithmName.SHA256, masterKeyRaw, KeySizeBytes, info);
         key.Write(derivedBytes);
         CryptographicOperations.ZeroMemory(derivedBytes);
-        key.CommitAndProtect();
+        key.EndAccess();
         return key;
     }
 
@@ -165,6 +165,8 @@ public class StorageService : IDisposable
             return (false, "Vault not found", 0);
         }
 
+        ValidateVaultVersion(config);
+
         var salt = Convert.FromBase64String(config.Salt);
         var storedVerifyKey = Convert.FromBase64String(config.PasswordHash);
         
@@ -180,16 +182,19 @@ public class StorageService : IDisposable
             masterKeyRaw = UnlockAndCopy(masterKeyBuffer);
             computedVerifyKey = DeriveKeyToBuffer(masterKeyRaw, "verify"u8.ToArray());
             
-            computedVerifyKey.UnprotectAndUnlock();
+            computedVerifyKey.BeginAccess();
             bool isValid = SecureMemory.FixedTimeEquals(computedVerifyKey.Span, storedVerifyKey.AsSpan());
-            computedVerifyKey.CommitAndProtect();
+            computedVerifyKey.EndAccess();
             
             if (isValid)
             {
+                _masterKey?.Dispose();
                 _masterKey = DeriveKeyToBuffer(masterKeyRaw, "encrypt"u8.ToArray());
+                _isVaultOpen = true;
                 
                 ResetFailedAttempts();
                 _audit?.LogLoginSuccess();
+                _audit?.LogVaultOpened();
                 return (true, null, 0);
             }
             else
@@ -328,9 +333,9 @@ public class StorageService : IDisposable
             masterKeyRaw = UnlockAndCopy(masterKeyBuffer);
             
             verifyKeyBuffer = DeriveKeyToBuffer(masterKeyRaw, "verify"u8.ToArray());
-            verifyKeyBuffer.UnprotectAndUnlock();
+            verifyKeyBuffer.BeginAccess();
             verifyKeyBytes = verifyKeyBuffer.ToArray();
-            verifyKeyBuffer.CommitAndProtect();
+            verifyKeyBuffer.EndAccess();
             
             _masterKey = DeriveKeyToBuffer(masterKeyRaw, "encrypt"u8.ToArray());
 
@@ -357,39 +362,6 @@ public class StorageService : IDisposable
             masterKeyBuffer?.Dispose();
             if (verifyKeyBytes != null) CryptographicOperations.ZeroMemory(verifyKeyBytes);
             verifyKeyBuffer?.Dispose();
-            CryptographicOperations.ZeroMemory(salt);
-        }
-    }
-
-    public void Initialize(string masterPassword)
-    {
-        var config = LoadConfig();
-        if (config == null) return;
-
-        ValidateVaultVersion(config);
-
-        var salt = Convert.FromBase64String(config.Salt);
-        byte[]? passwordBytes = null;
-        SecureBuffer? masterKeyBuffer = null;
-        byte[]? masterKeyRaw = null;
-        
-        try
-        {
-            passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
-            masterKeyBuffer = DeriveMasterKeyRaw(passwordBytes, salt);
-            masterKeyRaw = UnlockAndCopy(masterKeyBuffer);
-            
-            _masterKey?.Dispose();
-            _masterKey = DeriveKeyToBuffer(masterKeyRaw, "encrypt"u8.ToArray());
-            
-            _audit?.LogVaultOpened();
-            _isVaultOpen = true;
-        }
-        finally
-        {
-            if (passwordBytes != null) CryptographicOperations.ZeroMemory(passwordBytes);
-            if (masterKeyRaw != null) CryptographicOperations.ZeroMemory(masterKeyRaw);
-            masterKeyBuffer?.Dispose();
             CryptographicOperations.ZeroMemory(salt);
         }
     }
@@ -449,19 +421,19 @@ public class StorageService : IDisposable
         }
     }
 
-    public void LogCredentialAdded(string title)
+    public void LogCredentialAdded()
     {
-        _audit?.LogCredentialAdded(title);
+        _audit?.LogCredentialAdded();
     }
 
-    public void LogCredentialModified(string title)
+    public void LogCredentialModified()
     {
-        _audit?.LogCredentialModified(title);
+        _audit?.LogCredentialModified();
     }
 
-    public void LogCredentialDeleted(string title)
+    public void LogCredentialDeleted()
     {
-        _audit?.LogCredentialDeleted(title);
+        _audit?.LogCredentialDeleted();
     }
 
     public void LogPasswordGenerated()
@@ -506,7 +478,7 @@ public class StorageService : IDisposable
             cipherText = new byte[plainBytes.Length];
             tag = new byte[TagSizeBytes];
 
-            _masterKey.UnprotectAndUnlock();
+            _masterKey.BeginAccess();
             
             using var aesGcm = new AesGcm(_masterKey.Span, TagSizeBytes);
             aesGcm.Encrypt(nonce, plainBytes, cipherText, tag);
@@ -520,7 +492,7 @@ public class StorageService : IDisposable
         }
         finally
         {
-            _masterKey?.CommitAndProtect();
+            _masterKey?.EndAccess();
             CryptographicOperations.ZeroMemory(nonce);
             if (plainBytes != null) CryptographicOperations.ZeroMemory(plainBytes);
             if (cipherText != null) CryptographicOperations.ZeroMemory(cipherText);
@@ -549,7 +521,7 @@ public class StorageService : IDisposable
         {
             plainBytes = new byte[cipherText.Length];
 
-            _masterKey.UnprotectAndUnlock();
+            _masterKey.BeginAccess();
 
             using var aesGcm = new AesGcm(_masterKey.Span, TagSizeBytes);
             aesGcm.Decrypt(nonce, cipherText, tag, plainBytes);
@@ -563,7 +535,7 @@ public class StorageService : IDisposable
         }
         finally
         {
-            _masterKey?.CommitAndProtect();
+            _masterKey?.EndAccess();
             CryptographicOperations.ZeroMemory(nonce);
             CryptographicOperations.ZeroMemory(cipherText);
             CryptographicOperations.ZeroMemory(tag);

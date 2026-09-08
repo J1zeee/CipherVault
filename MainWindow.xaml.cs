@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private bool _isVaultUnlocked;
     private Grid? _previousScreen;
     private readonly VaultPaths _vaultPaths;
+    private readonly AppSettingsStore _settings;
     private VaultInfo? _selectedVault;
 
     private const uint WDA_MONITOR = 0x00000001;
@@ -67,6 +68,11 @@ public partial class MainWindow : Window
         
         _vaultManager = VaultManagerService.Instance;
         
+        _settings = new AppSettingsStore(GetConfigDirectory());
+        // Logging is a persisted preference; it used to reset to off on every start
+        // while the checkbox still claimed to remember it.
+        AuditService.LoggingEnabled = _settings.GetBool(AppSettingsStore.LoggingEnabledKey);
+
         _vaultPaths = new VaultPaths(GetDefaultVaultRoot());
         LoadPathSettings();
         _storageService = new StorageService(_vaultPaths.ActivePath);
@@ -126,7 +132,7 @@ public partial class MainWindow : Window
         ClearAllPasswords();
         
         // Clear clipboard
-        try { Clipboard.Clear(); } catch { }
+        SecureClipboard.TryClear();
     }
 
     private void ClearAllPasswords()
@@ -157,10 +163,8 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        if (_isVaultUnlocked)
-        {
-            _autoLockTimer.Stop();
-        }
+        // The timer deliberately keeps running: losing focus is exactly when an
+        // unattended vault should still lock itself.
     }
 
     private void Window_Activated(object? sender, EventArgs e)
@@ -197,13 +201,11 @@ public partial class MainWindow : Window
     {
         _clipboardClearTimer.Stop();
         
-        try
+        if (SecureClipboard.TryClear())
         {
-            Clipboard.Clear();
             StatusMessage.Text = _localization["ClipboardCleared"];
             _storageService.LogClipboardCleared();
         }
-        catch { }
     }
 
     private string FormatLockoutTime(int totalSeconds)
@@ -679,8 +681,32 @@ public partial class MainWindow : Window
                 var loc = _localization;
                 ShowConfirmDialog(loc["DeleteVault"], string.Format(loc["DeleteVaultConfirm"], vault.Name), () =>
                 {
-                    _vaultManager.DeleteVault(vaultId);
-                    RefreshVaultList();
+                    try
+                    {
+                        // If this is the vault currently open, its secrets must not
+                        // outlive the files being erased.
+                        if (_selectedVault != null && _selectedVault.Id == vaultId)
+                        {
+                            CloseVaultSession();
+                            _vaultPaths.ClearSelection();
+                            _selectedVault = null;
+                            _storageService.Dispose();
+                            _storageService = new StorageService(_vaultPaths.ActivePath);
+                            _viewModel.UpdateStorageService(_storageService);
+                        }
+
+                        if (Directory.Exists(vault.Path))
+                        {
+                            Directory.Delete(vault.Path, true);
+                        }
+
+                        _vaultManager.DeleteVault(vaultId);
+                        RefreshVaultList();
+                    }
+                    catch
+                    {
+                        ShowDialog(loc["DeleteVault"], loc["ImportFailed"]);
+                    }
                 });
             }
         }
@@ -713,6 +739,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // The name becomes a directory under the vaults root, so it has to be a
+        // usable Windows folder name and must not escape that root.
+        if (!VaultNameValidator.IsValid(vaultName))
+        {
+            LoginStatusMessage.Text = loc["InvalidVaultName"];
+            return;
+        }
+
         var existingVaults = _vaultManager.GetAllVaults();
         if (existingVaults.Any(v => v.Name.Equals(vaultName, StringComparison.OrdinalIgnoreCase)))
         {
@@ -739,15 +773,24 @@ public partial class MainWindow : Window
         }
 
         var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
-        var vault = _vaultManager.CreateVault(vaultName, vaultPath);
 
-        _storageService.Dispose();
-        _storageService = new StorageService(vaultPath);
-        _viewModel.UpdateStorageService(_storageService);
-        _vaultPaths.SelectVault(vaultPath);
-        _selectedVault = vault;
+        try
+        {
+            var vault = _vaultManager.CreateVault(vaultName, vaultPath);
 
-        _storageService.CreateVault(masterPassword);
+            _storageService.Dispose();
+            _storageService = new StorageService(vaultPath);
+            _viewModel.UpdateStorageService(_storageService);
+            _vaultPaths.SelectVault(vaultPath);
+            _selectedVault = vault;
+
+            _storageService.CreateVault(masterPassword);
+        }
+        catch (Exception)
+        {
+            LoginStatusMessage.Text = loc["VaultCreateFailed"];
+            return;
+        }
         
         // Securely clear password from memory
         masterPassword = "";
@@ -769,23 +812,25 @@ public partial class MainWindow : Window
             return;
         }
 
-        var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(masterPassword);
-        if (!success)
-        {
-            if (remainingSeconds > 0)
-            {
-                StartLockout(remainingSeconds);
-            }
-            else
-            {
-                LoginStatusMessage.Text = errorMessage ?? _localization["IncorrectPassword"];
-            }
-            return;
-        }
-
         try
         {
-            _storageService.Initialize(masterPassword);
+            // VerifyPassword derives the key and opens the vault in one pass. It also
+            // validates the stored vault version, so it can throw and belongs inside
+            // this try rather than ahead of it.
+            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(masterPassword);
+            if (!success)
+            {
+                if (remainingSeconds > 0)
+                {
+                    StartLockout(remainingSeconds);
+                }
+                else
+                {
+                    LoginStatusMessage.Text = errorMessage ?? _localization["IncorrectPassword"];
+                }
+                return;
+            }
+
             var credentials = _storageService.LoadVault();
             
             // Clear password immediately after use
@@ -1116,6 +1161,21 @@ public partial class MainWindow : Window
         GeneratePassword();
     }
 
+    // Clipboard calls fail whenever another process holds the clipboard open, which
+    // clipboard managers and RDP sessions do routinely - that used to crash the app.
+    private void CopyToClipboard(string value, string successMessageKey)
+    {
+        if (SecureClipboard.TrySetText(value))
+        {
+            StatusMessage.Text = _localization[successMessageKey];
+            StartClipboardClearTimer();
+        }
+        else
+        {
+            StatusMessage.Text = _localization["ClipboardUnavailable"];
+        }
+    }
+
     private void CopyUsername_Click(object sender, RoutedEventArgs e)
     {
         var credential = _viewModel.SelectedCredential;
@@ -1124,9 +1184,7 @@ public partial class MainWindow : Window
             var username = !string.IsNullOrEmpty(credential.Username) ? credential.Username : credential.Email;
             if (!string.IsNullOrEmpty(username))
             {
-                Clipboard.SetText(username);
-                StatusMessage.Text = _localization["UsernameCopied"];
-                StartClipboardClearTimer();
+                CopyToClipboard(username, "UsernameCopied");
             }
         }
     }
@@ -1136,9 +1194,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null && !string.IsNullOrEmpty(credential.Email))
         {
-            Clipboard.SetText(credential.Email);
-            StatusMessage.Text = _localization["EmailCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Email, "EmailCopied");
         }
     }
 
@@ -1147,9 +1203,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null && !string.IsNullOrEmpty(credential.Website))
         {
-            Clipboard.SetText(credential.Website);
-            StatusMessage.Text = _localization["WebsiteCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Website, "WebsiteCopied");
         }
     }
 
@@ -1158,9 +1212,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null)
         {
-            Clipboard.SetText(credential.Password);
-            StatusMessage.Text = _localization["PasswordCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Password, "PasswordCopied");
         }
     }
 
@@ -1404,17 +1456,30 @@ public partial class MainWindow : Window
 
     private void LoggingEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        AuditService.LoggingEnabled = LoggingEnabledCheckBox.IsChecked == true;
+        var enabled = LoggingEnabledCheckBox.IsChecked == true;
+        AuditService.LoggingEnabled = enabled;
+        _settings.SetBool(AppSettingsStore.LoggingEnabledKey, enabled);
     }
 
     private void OpenLogsFolderBtn_Click(object sender, RoutedEventArgs e)
     {
-        var logsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault", "Logs");
-        if (!Directory.Exists(logsPath))
+        // Ask the audit service where it actually writes instead of guessing, and let
+        // the shell open the folder so a username containing a space still resolves.
+        var logsPath = AuditService.Instance?.LogFolderPath
+            ?? Path.Combine(GetConfigDirectory(), "Logs");
+
+        try
         {
             Directory.CreateDirectory(logsPath);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = logsPath,
+                UseShellExecute = true
+            });
         }
-        System.Diagnostics.Process.Start("explorer.exe", logsPath);
+        catch
+        {
+        }
     }
 
     private void DeleteCurrentVaultBtn_Click(object sender, RoutedEventArgs e)
@@ -1622,6 +1687,11 @@ public partial class MainWindow : Window
             }
 
             var vaultName = Path.GetFileNameWithoutExtension(sourcePath);
+            if (!VaultNameValidator.IsValid(vaultName))
+            {
+                ShowDialog(loc["ImportVault"], loc["InvalidVaultName"]);
+                return;
+            }
 
             var existingVaults = _vaultManager.GetAllVaults();
             var baseName = vaultName;
@@ -1656,18 +1726,7 @@ public partial class MainWindow : Window
 
     private void SavePathSettings()
     {
-        var defaultConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
-        var settingsConfigPath = Path.Combine(defaultConfigPath, "settings.json");
-        var config = new Dictionary<string, string>();
-
-        if (File.Exists(settingsConfigPath))
-        {
-            var json = File.ReadAllText(settingsConfigPath);
-            config = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
-        }
-
-        config["vaultPath"] = VaultPathTextBox.Text;
-        File.WriteAllText(settingsConfigPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        _settings.SetString(AppSettingsStore.VaultPathKey, VaultPathTextBox.Text);
     }
 
     private static string GetDefaultVaultRoot()
@@ -1675,26 +1734,17 @@ public partial class MainWindow : Window
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
     }
 
+    private static string GetConfigDirectory()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
+    }
+
     // Reads the configured vaults ROOT. It must not touch the selected vault:
     // opening Settings used to retarget the current vault at the root, which made
     // "delete this vault" delete every vault instead.
     private void LoadPathSettings()
     {
-        var defaultConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
-        var settingsConfigPath = Path.Combine(defaultConfigPath, "settings.json");
-
-        var rootPath = GetDefaultVaultRoot();
-
-        if (File.Exists(settingsConfigPath))
-        {
-            var json = File.ReadAllText(settingsConfigPath);
-            var config = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (config != null)
-            {
-                if (config.TryGetValue("vaultPath", out var vp) && !string.IsNullOrEmpty(vp))
-                    rootPath = vp;
-            }
-        }
+        var rootPath = _settings.GetString(AppSettingsStore.VaultPathKey) ?? GetDefaultVaultRoot();
 
         _vaultPaths.SetRoot(rootPath);
         VaultPathTextBox.Text = rootPath;
