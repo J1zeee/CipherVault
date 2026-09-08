@@ -575,6 +575,9 @@
                                             <TextBlock x:Name="PasswordText" FontSize="16" FontFamily="Consolas"
                                                        Foreground="{StaticResource TextPrimaryBrush}"/>
                                         </StackPanel>
+                                        <TextBlock x:Name="CredentialPasswordMetrics" FontSize="12" Margin="0,4,0,0"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" x:Name="ShowPasswordBtn" Content="👁️" Style="{StaticResource IconButton}" ToolTip="Show"
                                             Click="ShowPassword_Click"/>
@@ -725,6 +728,10 @@
                                                        Foreground="{StaticResource TextSecondaryBrush}"
                                                        VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,0,0"/>
                                         </Grid>
+
+                                        <TextBlock x:Name="PasswordMetrics" FontSize="12" Margin="0,0,0,8"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Left" TextWrapping="Wrap"/>
 
                                         <Button x:Name="UsePasswordBtn" Content="Use Password" Style="{StaticResource PrimaryButton}"
                                                 HorizontalAlignment="Stretch" Click="UseGenerated_Click"/>

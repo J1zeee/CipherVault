@@ -1060,6 +1060,19 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         GeneratePassword();
     }
 
+    private string FormatPasswordMetrics(string password)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            return "";
+        }
+
+        var result = _passwordGenerator.AnalyzeStrength(password);
+        var crackTime = string.Format(_localization[result.CrackTime.UnitKey], result.CrackTime.Amount);
+
+        return string.Format(_localization["PasswordMetrics"], result.EntropyBits, crackTime);
+    }
+
     private void UpdateStrengthIndicator(string password)
     {
         if (StrengthFill == null || StrengthLabel == null)
@@ -1081,6 +1094,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var textWidth = StrengthLabel.DesiredSize.Width;
         var availableWidth = Math.Max(0, StrengthGrid.ActualWidth - textWidth - 4);
         StrengthFill.Width = availableWidth * fillPercent / 100.0;
+
+        if (PasswordMetrics != null)
+        {
+            PasswordMetrics.Text = FormatPasswordMetrics(password);
+        }
     }
 
     private static System.Windows.Media.Color StrengthColor(string localizationKey) => localizationKey switch
@@ -1245,6 +1263,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             UsernameText.Text = credential.Username;
             EmailText.Text = credential.Email;
             PasswordText.Text = new string('•', Math.Min(credential.Password.Length, 16));
+            CredentialPasswordMetrics.Text = FormatPasswordMetrics(credential.Password);
             WebsiteText.Text = credential.Website;
             
             if (string.IsNullOrEmpty(credential.Notes))
