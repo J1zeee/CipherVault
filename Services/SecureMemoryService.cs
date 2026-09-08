@@ -308,35 +308,7 @@ public static class SecureMemory
     }
 }
 
-public static class SecureStringHelper
-{
-    public static SecureBuffer StringToSecureBytes(string? str)
-    {
-        if (string.IsNullOrEmpty(str))
-            return new SecureBuffer(0);
 
-        var bytes = System.Text.Encoding.UTF8.GetBytes(str);
-        var buffer = new SecureBuffer(bytes.Length);
-        buffer.Write(bytes);
-
-        CryptographicOperations.ZeroMemory(bytes);
-        Array.Clear(bytes, 0, bytes.Length);
-
-        return buffer;
-    }
-
-    public static string SecureBytesToString(SecureBuffer buffer)
-    {
-        var bytes = buffer.ToArray();
-        var str = System.Text.Encoding.UTF8.GetString(bytes);
-
-        CryptographicOperations.ZeroMemory(bytes);
-        Array.Clear(bytes, 0, bytes.Length);
-        buffer.Clear();
-
-return str;
-    }
-}
 
 public sealed class SecureSession : IDisposable
 {

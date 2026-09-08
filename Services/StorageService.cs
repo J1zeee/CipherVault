@@ -129,7 +129,7 @@ public class StorageService : IDisposable
     /// Verifies the master password and, on success, opens the vault. The password
     /// buffer belongs to the caller and is neither retained nor wiped here.
     /// </summary>
-    public (bool Success, string? ErrorMessage, int RemainingSeconds) VerifyPassword(byte[] masterPassword)
+    public (bool Success, string? ErrorMessage, int RemainingSeconds) VerifyPassword(ReadOnlySpan<byte> masterPassword)
     {
         // Record failed attempt even during lockout to increase future delays
         bool wasLockedOut = IsLockedOut(out int existingRemaining);
@@ -300,7 +300,7 @@ public class StorageService : IDisposable
     /// Creates a new vault. The password buffer belongs to the caller and is neither
     /// retained nor wiped here.
     /// </summary>
-    public void CreateVault(byte[] masterPassword)
+    public void CreateVault(ReadOnlySpan<byte> masterPassword)
     {
         var salt = new byte[SaltSizeBytes];
         RandomNumberGenerator.Fill(salt);

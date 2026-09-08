@@ -772,15 +772,19 @@ public partial class MainWindow : Window
 
         var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
 
-        byte[]? passwordBytes = null;
-        byte[]? confirmBytes = null;
+        // Scratch buffers we own and wipe; the converter never builds a managed
+        // string, and the exact length comes back from the write.
+        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
+        var confirmBytes = new byte[SecureStringConverter.GetMaxByteCount(secureConfirm)];
 
         try
         {
-            passwordBytes = SecureStringConverter.ToUtf8Bytes(securePassword);
-            confirmBytes = SecureStringConverter.ToUtf8Bytes(secureConfirm);
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
+            var confirmLength = SecureStringConverter.WriteUtf8Bytes(secureConfirm, confirmBytes);
 
-            if (!CryptographicOperations.FixedTimeEquals(passwordBytes, confirmBytes))
+            if (!CryptographicOperations.FixedTimeEquals(
+                    passwordBytes.AsSpan(0, passwordLength),
+                    confirmBytes.AsSpan(0, confirmLength)))
             {
                 LoginStatusMessage.Text = loc["PasswordsMismatch"];
                 return;
@@ -794,7 +798,7 @@ public partial class MainWindow : Window
             _vaultPaths.SelectVault(vaultPath);
             _selectedVault = vault;
 
-            _storageService.CreateVault(passwordBytes);
+            _storageService.CreateVault(passwordBytes.AsSpan(0, passwordLength));
         }
         catch (Exception)
         {
@@ -803,8 +807,8 @@ public partial class MainWindow : Window
         }
         finally
         {
-            if (passwordBytes != null) CryptographicOperations.ZeroMemory(passwordBytes);
-            if (confirmBytes != null) CryptographicOperations.ZeroMemory(confirmBytes);
+            CryptographicOperations.ZeroMemory(passwordBytes);
+            CryptographicOperations.ZeroMemory(confirmBytes);
         }
 
         CreateMasterPassword.Password = "";
@@ -825,18 +829,18 @@ public partial class MainWindow : Window
             return;
         }
 
-        byte[]? passwordBytes = null;
+        // A scratch buffer we own and wipe; PasswordBox.Password would hand back an
+        // immutable string that cannot be cleared at all.
+        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
 
         try
         {
-            // Converted straight to bytes we can zero; PasswordBox.Password would hand
-            // back an immutable string that cannot be cleared.
-            passwordBytes = SecureStringConverter.ToUtf8Bytes(securePassword);
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
 
             // VerifyPassword derives the key and opens the vault in one pass. It also
             // validates the stored vault version, so it can throw and belongs inside
             // this try rather than ahead of it.
-            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBytes);
+            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBytes.AsSpan(0, passwordLength));
             if (!success)
             {
                 if (remainingSeconds > 0)
@@ -880,7 +884,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            if (passwordBytes != null) CryptographicOperations.ZeroMemory(passwordBytes);
+            CryptographicOperations.ZeroMemory(passwordBytes);
         }
     }
 
@@ -1100,16 +1104,14 @@ public partial class MainWindow : Window
             return;
 
         var result = _passwordGenerator.AnalyzeStrength(password);
-        
-        var (label, fillPercent, color) = result.Score switch
-        {
-            >= 80 => (_localization["Strong"], 100, System.Windows.Media.Color.FromRgb(34, 197, 94)),   //(63, 185, 80)
-            >= 60 => (_localization["Good"], 75, System.Windows.Media.Color.FromRgb(252, 186, 3)),      //(88, 166, 255)
-            >= 40 => (_localization["Fair"], 50, System.Windows.Media.Color.FromRgb(255, 140, 0)),      //(219, 151, 50)
-            _ => (_localization["Weak"], 25, System.Windows.Media.Color.FromRgb(220, 38, 52))           //(218, 54, 51)
-        };
-        
-        StrengthLabel.Text = label;
+
+        // Buckets come from PasswordStrengthPresenter so the meter and the analyzer
+        // cannot drift apart again.
+        var presentation = PasswordStrengthPresenter.Describe(result.Score);
+        var fillPercent = presentation.FillPercent;
+        var color = StrengthColor(presentation.LocalizationKey);
+
+        StrengthLabel.Text = _localization[presentation.LocalizationKey];
         StrengthFill.Background = new System.Windows.Media.SolidColorBrush(color);
         StrengthLabel.Foreground = new System.Windows.Media.SolidColorBrush(color);
         
@@ -1119,12 +1121,21 @@ public partial class MainWindow : Window
         StrengthFill.Width = availableWidth * fillPercent / 100.0;
     }
 
+    private static System.Windows.Media.Color StrengthColor(string localizationKey) => localizationKey switch
+    {
+        "VeryStrong" => System.Windows.Media.Color.FromRgb(34, 197, 94),
+        "Strong" => System.Windows.Media.Color.FromRgb(132, 204, 22),
+        "Good" => System.Windows.Media.Color.FromRgb(252, 186, 3),
+        "Fair" => System.Windows.Media.Color.FromRgb(255, 140, 0),
+        _ => System.Windows.Media.Color.FromRgb(220, 38, 52)
+    };
+
     private void StrengthGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_passwordGenerator != null && GeneratedPassword != null)
         {
             var result = _passwordGenerator.AnalyzeStrength(GeneratedPassword.Text ?? "");
-            var fillPercent = result.Score >= 80 ? 100 : result.Score >= 60 ? 75 : result.Score >= 40 ? 50 : 25;
+            var fillPercent = PasswordStrengthPresenter.Describe(result.Score).FillPercent;
             
             StrengthLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var textWidth = StrengthLabel.DesiredSize.Width;

@@ -19,12 +19,16 @@ public static class MasterKeyDerivation
     private const int MemoryKB = 131072;
     private const int Parallelism = 4;
 
-    public static SecureBuffer Derive(byte[] password, byte[] salt, bool wipePassword = false)
+    /// <summary>
+    /// Derives the master key. The password and salt belong to the caller: they are
+    /// neither retained nor modified here, and zeroing them stays the caller's job.
+    /// </summary>
+    public static SecureBuffer Derive(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt)
     {
         // Argon2id keeps a reference to the arrays it is given; hand it copies so the
         // caller's buffers stay under the caller's control.
-        var passwordCopy = (byte[])password.Clone();
-        var saltCopy = (byte[])salt.Clone();
+        var passwordCopy = password.ToArray();
+        var saltCopy = salt.ToArray();
         byte[]? derivedBytes = null;
         Argon2id? argon2 = null;
 
@@ -52,8 +56,6 @@ public static class MasterKeyDerivation
             if (derivedBytes != null) CryptographicOperations.ZeroMemory(derivedBytes);
             CryptographicOperations.ZeroMemory(passwordCopy);
             CryptographicOperations.ZeroMemory(saltCopy);
-
-            if (wipePassword) CryptographicOperations.ZeroMemory(password);
         }
     }
 }

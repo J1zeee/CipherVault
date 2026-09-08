@@ -65,7 +65,7 @@ public class LocalizationService : INotifyPropertyChanged
             ["Weak"] = "Weak",
             ["Fair"] = "Fair",
             ["Good"] = "Good",
-            ["Strong"] = "Very Strong",
+            ["Strong"] = "Strong",
             ["VeryStrong"] = "Very Strong",
             ["Entropy"] = "Entropy",
             ["CrackTime"] = "Crack time",

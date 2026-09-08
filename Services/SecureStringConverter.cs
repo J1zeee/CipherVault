@@ -5,42 +5,61 @@ using System.Text;
 namespace CipherVault.Services;
 
 /// <summary>
-/// Turns a <see cref="SecureString"/> from a WPF PasswordBox into UTF-8 bytes without
-/// ever materialising a managed string. A .NET string is immutable and cannot be
-/// cleared, so a master password that becomes one stays in the heap until a garbage
-/// collection happens to overwrite it - which may be never.
+/// Writes the contents of a <see cref="SecureString"/> from a WPF PasswordBox into a
+/// caller-supplied buffer as UTF-8, without ever materialising a managed string. A
+/// .NET string is immutable and cannot be cleared, so a master password that becomes
+/// one stays in the heap until a garbage collection happens to overwrite it - which
+/// may be never.
 ///
-/// The intermediate character buffer is pinned so clearing it cannot be defeated by
-/// the GC relocating it. The array that is returned is the caller's to zero when done;
-/// being a managed array it can still be moved by a collection before that happens,
-/// which is the residual limit of doing this without unmanaged buffers throughout.
+/// The decrypted characters are read straight from the unmanaged block that
+/// SecureStringToGlobalAllocUnicode hands back, so no managed copy of the plaintext is
+/// made along the way; that block is zeroed and freed before this returns. The
+/// destination belongs to the caller, who is responsible for zeroing it when done.
+///
+/// SecureString is itself deprecated and offers no protection off Windows. On Windows
+/// it is still backed by CryptProtectMemory, which makes it a meaningful improvement
+/// over a plain string here.
 /// </summary>
 public static class SecureStringConverter
 {
-    public static byte[] ToUtf8Bytes(SecureString value)
+    /// <summary>Bytes that <see cref="WriteUtf8Bytes"/> can need at most for this value.</summary>
+    public static int GetMaxByteCount(SecureString value)
     {
         if (value == null || value.Length == 0)
-            return Array.Empty<byte>();
+            return 0;
+
+        return Encoding.UTF8.GetMaxByteCount(value.Length);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="value"/> into <paramref name="destination"/> as UTF-8 and
+    /// returns the number of bytes written. The destination must be at least
+    /// <see cref="GetMaxByteCount"/> bytes, or large enough for the encoded value.
+    /// </summary>
+    public static unsafe int WriteUtf8Bytes(SecureString value, Span<byte> destination)
+    {
+        if (value == null || value.Length == 0)
+            return 0;
 
         var unmanaged = IntPtr.Zero;
-        char[]? chars = null;
-        GCHandle pinnedChars = default;
 
         try
         {
             unmanaged = Marshal.SecureStringToGlobalAllocUnicode(value);
 
-            chars = new char[value.Length];
-            pinnedChars = GCHandle.Alloc(chars, GCHandleType.Pinned);
-            Marshal.Copy(unmanaged, chars, 0, chars.Length);
+            // Read directly out of the unmanaged block: copying into a managed char[]
+            // first would put the plaintext on the GC heap, where it can be relocated
+            // and left behind.
+            var chars = new ReadOnlySpan<char>((char*)unmanaged, value.Length);
 
-            return Encoding.UTF8.GetBytes(chars);
+            return Encoding.UTF8.GetBytes(chars, destination);
         }
         finally
         {
-            if (chars != null) Array.Clear(chars, 0, chars.Length);
-            if (pinnedChars.IsAllocated) pinnedChars.Free();
-            if (unmanaged != IntPtr.Zero) Marshal.ZeroFreeGlobalAllocUnicode(unmanaged);
+            if (unmanaged != IntPtr.Zero)
+            {
+                Marshal.ZeroFreeGlobalAllocUnicode(unmanaged);
+            }
         }
     }
 }
