@@ -122,16 +122,15 @@ public class Credential : INotifyPropertyChanged, IDisposable
                     result = result.TrimEnd('\0');
                     buffer.CommitAndProtect();
                     
-                    // Return space if empty to allow Title[0] binding to work
-                    return string.IsNullOrEmpty(result) ? " " : result;
+                    return result;
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"GetSecureString error for {fieldName}: {ex.Message}");
-                    return " ";
+                    return "";
                 }
             }
-            return " ";
+            return "";
         }
     }
 

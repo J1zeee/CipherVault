@@ -17,12 +17,22 @@
     <SignAssembly>False</SignAssembly>
   </PropertyGroup>
 
+  <!-- The test project lives beneath this project's directory, so keep its sources
+       and build output out of this project's default globs. -->
+  <ItemGroup>
+    <Compile Remove="CipherVault.Tests/**" />
+    <Page Remove="CipherVault.Tests/**" />
+    <None Remove="CipherVault.Tests/**" />
+    <EmbeddedResource Remove="CipherVault.Tests/**" />
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="resources\icon.ico" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.0" />
     <PackageReference Include="System.IO.Compression.ZipFile" Version="4.3.0" />
   </ItemGroup>

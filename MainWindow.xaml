@@ -1,4 +1,4 @@
-<Window x:Class="CipherVault.MainWindow"
+﻿<Window x:Class="CipherVault.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -21,6 +21,7 @@
     <Window.Resources>
         <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
         <converters:CategoryColorConverter x:Key="CategoryColorConverter"/>
+        <converters:FirstCharConverter x:Key="FirstCharConverter"/>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
         
         <Style x:Key="LogoButton" TargetType="Button">
@@ -424,7 +425,7 @@
                                                 <GradientStop Color="#A371F7" Offset="1"/>
                                             </LinearGradientBrush>
                                         </Border.Background>
-                                        <TextBlock Text="{Binding Title[0]}" FontSize="18" FontWeight="Bold"
+                                        <TextBlock Text="{Binding Title, Converter={StaticResource FirstCharConverter}}" FontSize="18" FontWeight="Bold"
                                                    Foreground="White" HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"/>
                                     </Border>
@@ -491,7 +492,7 @@
                                         <GradientStop Color="#A371F7" Offset="1"/>
                                     </LinearGradientBrush>
                                 </Border.Background>
-                                <TextBlock Text="{Binding SelectedCredential.Title[0]}" FontSize="28" FontWeight="Bold"
+                                <TextBlock Text="{Binding SelectedCredential.Title, Converter={StaticResource FirstCharConverter}}" FontSize="28" FontWeight="Bold"
                                            Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
 

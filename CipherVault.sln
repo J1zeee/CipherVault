@@ -5,16 +5,42 @@ VisualStudioVersion = 17.14.36518.9
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CipherVault", "CipherVault.csproj", "{83E811B0-0902-57BF-3FC0-B876850F28CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CipherVault.Tests", "CipherVault.Tests\CipherVault.Tests.csproj", "{3B284228-4294-4280-9FD5-F08DC6E22967}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|x64.Build.0 = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Debug|x86.Build.0 = Debug|Any CPU
 		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|x64.ActiveCfg = Release|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|x64.Build.0 = Release|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|x86.ActiveCfg = Release|Any CPU
+		{83E811B0-0902-57BF-3FC0-B876850F28CF}.Release|x86.Build.0 = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|x64.Build.0 = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Debug|x86.Build.0 = Debug|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|x64.ActiveCfg = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|x64.Build.0 = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|x86.ActiveCfg = Release|Any CPU
+		{3B284228-4294-4280-9FD5-F08DC6E22967}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

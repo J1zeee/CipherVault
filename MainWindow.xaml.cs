@@ -27,7 +27,7 @@ public partial class MainWindow : Window
     private DateTime _lastActivity;
     private bool _isVaultUnlocked;
     private Grid? _previousScreen;
-    private string _vaultPath = "";
+    private readonly VaultPaths _vaultPaths;
     private VaultInfo? _selectedVault;
 
     private const uint WDA_MONITOR = 0x00000001;
@@ -67,8 +67,9 @@ public partial class MainWindow : Window
         
         _vaultManager = VaultManagerService.Instance;
         
+        _vaultPaths = new VaultPaths(GetDefaultVaultRoot());
         LoadPathSettings();
-        _storageService = new StorageService(_vaultPath);
+        _storageService = new StorageService(_vaultPaths.ActivePath);
         _passwordGenerator = new PasswordGenerator();
         _viewModel = new MainViewModel(_storageService);
         DataContext = _viewModel;
@@ -241,6 +242,9 @@ public partial class MainWindow : Window
         CreateVaultBtn.IsEnabled = false;
         CreateMasterPassword.IsEnabled = false;
         ConfirmMasterPassword.IsEnabled = false;
+        // Otherwise the lockout is escaped by stepping back to the list and
+        // reselecting the vault.
+        BackToVaultsBtn.IsEnabled = false;
         
         _lockoutTimer.Start();
     }
@@ -254,19 +258,21 @@ public partial class MainWindow : Window
         CreateVaultBtn.IsEnabled = true;
         CreateMasterPassword.IsEnabled = true;
         ConfirmMasterPassword.IsEnabled = true;
+        BackToVaultsBtn.IsEnabled = true;
         
         LoginStatusMessage.Text = "";
     }
 
-    private void LockVault()
+    // Drops the master key and every decrypted credential without navigating.
+    // Deleting a vault needs this too: the secrets must not outlive the files.
+    private void CloseVaultSession()
     {
         _isVaultUnlocked = false;
         _autoLockTimer.Stop();
         _clipboardClearTimer.Stop();
-        _lockoutTimer.Stop();
-        
+
         _storageService.ClearMasterKey();
-        
+
         foreach (var cred in _viewModel.Credentials)
         {
             cred.SecureClear();
@@ -275,8 +281,14 @@ public partial class MainWindow : Window
         _viewModel.Credentials.Clear();
         _viewModel.FilterCredentials();
         _viewModel.SelectedCredential = null;
-        
+
         ClearAllPasswords();
+    }
+
+    private void LockVault()
+    {
+        CloseVaultSession();
+        _lockoutTimer.Stop();
         
         LoginScreen.Visibility = Visibility.Visible;
         MainApp.Visibility = Visibility.Collapsed;
@@ -617,6 +629,7 @@ public partial class MainWindow : Window
         UnlockForm.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
         _selectedVault = null;
+        _vaultPaths.ClearSelection();
         RefreshVaultList();
     }
 
@@ -630,9 +643,9 @@ public partial class MainWindow : Window
         if (VaultListBox.SelectedItem is VaultInfo vault)
         {
             _selectedVault = vault;
-            _vaultPath = vault.Path;
+            _vaultPaths.SelectVault(vault.Path);
             _storageService.Dispose();
-            _storageService = new StorageService(_vaultPath);
+            _storageService = new StorageService(_vaultPaths.ActivePath);
             _viewModel.UpdateStorageService(_storageService);
 
             _vaultManager.UpdateLastOpened(vault.Id);
@@ -646,6 +659,13 @@ public partial class MainWindow : Window
             UnlockPassword.Password = "";
 
             CheckVaultState();
+
+            // The lockout is persisted per vault, so a pending one has to be shown
+            // again here rather than silently waiting for the next failed attempt.
+            if (_storageService.IsLockedOut(out int lockoutRemaining))
+            {
+                StartLockout(lockoutRemaining);
+            }
         }
     }
 
@@ -718,13 +738,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var vaultPath = Path.Combine(_vaultPath, vaultName);
+        var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
         var vault = _vaultManager.CreateVault(vaultName, vaultPath);
 
         _storageService.Dispose();
         _storageService = new StorageService(vaultPath);
         _viewModel.UpdateStorageService(_storageService);
-        _vaultPath = vaultPath;
+        _vaultPaths.SelectVault(vaultPath);
         _selectedVault = vault;
 
         _storageService.CreateVault(masterPassword);
@@ -1400,11 +1420,24 @@ public partial class MainWindow : Window
     private void DeleteCurrentVaultBtn_Click(object sender, RoutedEventArgs e)
     {
         var loc = _localization;
+
+        // Refuse when nothing is selected, or when the selection is the vaults root -
+        // deleting the root takes every vault the user has with it.
+        if (!_vaultPaths.CanDeleteCurrentVault)
+        {
+            ShowDialog(loc["DeleteCurrentVault"], loc["NoVaultSelectedToDelete"]);
+            return;
+        }
+
+        var vaultPath = _vaultPaths.DeleteTargetPath;
+
         ShowConfirmDialog(loc["DeleteCurrentVault"], loc["DeleteVaultWarning"], () =>
         {
             try
             {
-                var vaultPath = _vaultPath;
+                // The master key and decrypted credentials must not outlive the files.
+                CloseVaultSession();
+
                 if (Directory.Exists(vaultPath))
                 {
                     Directory.Delete(vaultPath, true);
@@ -1416,8 +1449,10 @@ public partial class MainWindow : Window
                     _selectedVault = null;
                 }
 
+                _vaultPaths.ClearSelection();
+
                 _storageService.Dispose();
-                _storageService = new StorageService(_vaultPath);
+                _storageService = new StorageService(_vaultPaths.ActivePath);
                 _viewModel.UpdateStorageService(_storageService);
 
                 ShowDialog(loc["DeleteCurrentVault"], loc["VaultDeleted"]);
@@ -1597,7 +1632,7 @@ public partial class MainWindow : Window
                 counter++;
             }
 
-            var vaultPath = Path.Combine(_vaultPath, vaultName);
+            var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
             Directory.CreateDirectory(vaultPath);
 
             File.Copy(vaultDatPath, Path.Combine(vaultPath, "vault.dat"), true);
@@ -1635,13 +1670,20 @@ public partial class MainWindow : Window
         File.WriteAllText(settingsConfigPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
     }
 
+    private static string GetDefaultVaultRoot()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
+    }
+
+    // Reads the configured vaults ROOT. It must not touch the selected vault:
+    // opening Settings used to retarget the current vault at the root, which made
+    // "delete this vault" delete every vault instead.
     private void LoadPathSettings()
     {
         var defaultConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
         var settingsConfigPath = Path.Combine(defaultConfigPath, "settings.json");
-        var defaultVaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
 
-        _vaultPath = defaultVaultPath;
+        var rootPath = GetDefaultVaultRoot();
 
         if (File.Exists(settingsConfigPath))
         {
@@ -1650,18 +1692,19 @@ public partial class MainWindow : Window
             if (config != null)
             {
                 if (config.TryGetValue("vaultPath", out var vp) && !string.IsNullOrEmpty(vp))
-                    _vaultPath = vp;
+                    rootPath = vp;
             }
         }
 
-        VaultPathTextBox.Text = _vaultPath;
+        _vaultPaths.SetRoot(rootPath);
+        VaultPathTextBox.Text = rootPath;
     }
 
     private void ApplyPathChanges()
     {
         var newVaultPath = VaultPathTextBox.Text;
 
-        if (newVaultPath != _vaultPath)
+        if (newVaultPath != _vaultPaths.RootPath)
         {
             if (_isVaultUnlocked)
             {
@@ -1672,8 +1715,10 @@ public partial class MainWindow : Window
             }
 
             _storageService.Dispose();
-            _vaultPath = newVaultPath;
-            _storageService = new StorageService(_vaultPath);
+            _vaultPaths.SetRoot(newVaultPath);
+            _vaultPaths.ClearSelection();
+            _selectedVault = null;
+            _storageService = new StorageService(_vaultPaths.ActivePath);
             _viewModel.UpdateStorageService(_storageService);
 
             CheckVaultState();

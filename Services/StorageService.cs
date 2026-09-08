@@ -32,6 +32,7 @@ public class StorageService : IDisposable
     
     private int _failedAttempts;
     private DateTime? _lockoutStartTime;
+    private readonly LockoutStore _lockoutStore;
 
     public bool IsVaultOpen => _isVaultOpen;
 
@@ -48,6 +49,13 @@ public class StorageService : IDisposable
         
         _dataPath = Path.Combine(localFolder, "vault.dat");
         _configPath = Path.Combine(localFolder, "config.json");
+
+        // Lockout state is persisted per vault: recreating this service (switching
+        // vaults, restarting the app) must not hand an attacker a fresh attempt budget.
+        _lockoutStore = new LockoutStore(localFolder);
+        var lockoutState = _lockoutStore.Load();
+        _failedAttempts = lockoutState.FailedAttempts;
+        _lockoutStartTime = lockoutState.LockoutStartUtc;
         
         try
         {
@@ -247,6 +255,7 @@ public class StorageService : IDisposable
     {
         _failedAttempts = 0;
         _lockoutStartTime = null;
+        _lockoutStore.Clear();
     }
     
     private int RecordFailedAttempt()
@@ -266,6 +275,8 @@ public class StorageService : IDisposable
             }
         }
         
+        PersistLockoutState();
+
         int delay = _failedAttempts >= MaxFailedAttempts ? CalculateLockoutDelay() : 0;
         return delay;
     }
@@ -274,6 +285,16 @@ public class StorageService : IDisposable
     {
         _failedAttempts = 0;
         _lockoutStartTime = null;
+        _lockoutStore.Clear();
+    }
+
+    private void PersistLockoutState()
+    {
+        _lockoutStore.Save(new LockoutState
+        {
+            FailedAttempts = _failedAttempts,
+            LockoutStartUtc = _lockoutStartTime
+        });
     }
     
     private int CalculateLockoutDelay()
@@ -323,8 +344,8 @@ public class StorageService : IDisposable
             var json = JsonSerializer.Serialize(new List<Credential>());
             var encrypted = Encrypt(json);
 
-            File.WriteAllBytes(_dataPath, encrypted);
-            File.WriteAllText(_configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+            AtomicFile.WriteAllBytes(_dataPath, encrypted);
+            AtomicFile.WriteAllText(_configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
             
             _audit?.LogVaultCreated();
             _isVaultOpen = true;
@@ -419,7 +440,7 @@ public class StorageService : IDisposable
             var dtos = credentials.Select(c => CredentialDto.FromCredential(c)).ToList();
             var json = JsonSerializer.Serialize(dtos, new JsonSerializerOptions { WriteIndented = true });
             var encrypted = Encrypt(json);
-            File.WriteAllBytes(_dataPath, encrypted);
+            AtomicFile.WriteAllBytes(_dataPath, encrypted);
         }
         catch (Exception ex)
         {
