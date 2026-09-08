@@ -71,14 +71,6 @@
 
         <!-- Settings Panel -->
         <Grid x:Name="SettingsPanel" Grid.Row="1" Visibility="Collapsed">
-            <Grid.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#0D1117" Offset="0"/>
-                    <GradientStop Color="#161B22" Offset="0.5"/>
-                    <GradientStop Color="#0D1117" Offset="1"/>
-                </LinearGradientBrush>
-            </Grid.Background>
-
             <!-- Settings Content -->
             <ScrollViewer Margin="300,40,300,40" VerticalScrollBarVisibility="Hidden">
                 <StackPanel x:Name="SettingsTabInterface" Visibility="Visible">
@@ -97,7 +89,7 @@
                         <TextBlock Grid.Column="0" x:Name="SettingsLanguageLabel" Text="Language" FontSize="14"
                                    Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="1" x:Name="LanguageComboBox" Width="160"
-                                  Style="{StaticResource ModernComboBox}"
+                                 
                                   SelectionChanged="LanguageComboBox_SelectionChanged"/>
                     </Grid>
                 </Border>
@@ -121,11 +113,11 @@
                                  BorderBrush="{StaticResource BorderBrush}"
                                  BorderThickness="1" Padding="12,8" IsReadOnly="True"
                                  VerticalContentAlignment="Center"/>
-                        <Button Grid.Column="1" x:Name="VaultPathBrowseBtn" Content="Browse"
-                                Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="8,0,0,0"
+                        <ui:Button Grid.Column="1" x:Name="VaultPathBrowseBtn" Content="Browse"
+                                Appearance="Secondary" Padding="16,8" Margin="8,0,0,0"
                                 Click="VaultPathBrowseBtn_Click"/>
-                        <Button Grid.Column="2" x:Name="VaultPathResetBtn" Content="Reset"
-                                Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="8,0,0,0"
+                        <ui:Button Grid.Column="2" x:Name="VaultPathResetBtn" Content="Reset"
+                                Appearance="Secondary" Padding="16,8" Margin="8,0,0,0"
                                 Click="VaultPathResetBtn_Click"/>
                     </Grid>
                 </Border>
@@ -150,7 +142,7 @@
                         </StackPanel>
                         <CheckBox Grid.Column="1" x:Name="ScreenCaptureProtectionCheckBox"
                                   VerticalAlignment="Center"
-                                  Style="{StaticResource ModernCheckBox}"
+                                 
                                   Checked="ScreenCaptureProtectionCheckBox_Changed"
                                   Unchecked="ScreenCaptureProtectionCheckBox_Changed"/>
                     </Grid>
@@ -168,16 +160,16 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" x:Name="LoggingEnabledLabel" Text="Enable logging" FontSize="14"
                                        Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
-                            <CheckBox Grid.Column="1" x:Name="LoggingEnabledCheckBox" Style="{StaticResource ModernCheckBox}"
+                            <CheckBox Grid.Column="1" x:Name="LoggingEnabledCheckBox"
                                       Checked="LoggingEnabledCheckBox_Changed" Unchecked="LoggingEnabledCheckBox_Changed"/>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                            <Button x:Name="OpenLogsFolderBtn" Content="Open Logs Folder"
-                                    Style="{StaticResource SecondaryButton}" Padding="16,8" Margin="0,0,8,0"
+                            <ui:Button x:Name="OpenLogsFolderBtn" Content="Open Logs Folder"
+                                    Appearance="Secondary" Padding="16,8" Margin="0,0,8,0"
                                     Click="OpenLogsFolderBtn_Click"/>
-                            <Button x:Name="ClearLogsBtn" Content="Clear Logs"
-                                    Style="{StaticResource SecondaryButton}" Padding="16,8"
+                            <ui:Button x:Name="ClearLogsBtn" Content="Clear Logs"
+                                    Appearance="Secondary" Padding="16,8"
                                     Click="ClearLogsBtn_Click"/>
                         </StackPanel>
                     </StackPanel>
@@ -188,8 +180,8 @@
 
                 <Border Background="{StaticResource CardBackgroundBrush}" CornerRadius="12" Padding="20">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button x:Name="DeleteVaultBtn" Content="Delete Current Vault"
-                                Style="{StaticResource DangerButton}" Padding="24,12"
+                        <ui:Button x:Name="DeleteVaultBtn" Content="Delete Current Vault"
+                                Appearance="Danger" Padding="24,12"
                                 Click="DeleteCurrentVaultBtn_Click"/>
                     </StackPanel>
                 </Border>
@@ -199,11 +191,11 @@
 
                 <Border Background="{StaticResource CardBackgroundBrush}" CornerRadius="12" Padding="20">
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button x:Name="ExportVaultBtn" Content="Export Vault"
-                                Style="{StaticResource PrimaryButton}" Padding="24,12" Margin="0,0,12,0"
+                        <ui:Button x:Name="ExportVaultBtn" Content="Export Vault"
+                                Appearance="Primary" Padding="24,12" Margin="0,0,12,0"
                                 Click="ExportVaultBtn_Click"/>
-                        <Button x:Name="ImportVaultBtn" Content="Import Vault"
-                                Style="{StaticResource SecondaryButton}" Padding="24,12"
+                        <ui:Button x:Name="ImportVaultBtn" Content="Import Vault"
+                                Appearance="Secondary" Padding="24,12"
                                 Click="ImportVaultBtn_Click"/>
                     </StackPanel>
                 </Border>
@@ -219,16 +211,8 @@
 
         <!-- Login/Setup Screen -->
         <Grid x:Name="LoginScreen" Grid.Row="1" Visibility="Visible">
-            <Grid.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#0D1117" Offset="0"/>
-                    <GradientStop Color="#161B22" Offset="0.5"/>
-                    <GradientStop Color="#0D1117" Offset="1"/>
-                </LinearGradientBrush>
-            </Grid.Background>
-
             <!-- Settings Button (top right) -->
-            <Button Style="{StaticResource IconButton}" HorizontalAlignment="Right" VerticalAlignment="Top"
+            <ui:Button Appearance="Transparent" HorizontalAlignment="Right" VerticalAlignment="Top"
                     Margin="20" FontSize="20" Click="SettingsBtn_Click" Content="⚙"/>
 
             <Border Background="{StaticResource SecondaryDarkBrush}"
@@ -304,7 +288,7 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <Button x:Name="CreateNewVaultBtn" Content="+ Create New Vault" Style="{StaticResource PrimaryButton}"
+                        <ui:Button x:Name="CreateNewVaultBtn" Content="+ Create New Vault" Appearance="Primary"
                                 Click="ShowCreateVaultForm_Click" HorizontalAlignment="Stretch" Margin="0,0,0,16"/>
 
                         <TextBlock x:Name="NoVaultsMessage" Text="No vaults yet. Create one to get started." FontSize="13"
@@ -318,18 +302,18 @@
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,20"/>
 
                         <TextBlock x:Name="VaultNameLabel" Text="Vault Name" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <TextBox x:Name="NewVaultName" Style="{StaticResource ModernTextBox}" Margin="0,0,0,16"/>
+                        <TextBox x:Name="NewVaultName" Margin="0,0,0,16"/>
 
                         <TextBlock x:Name="CreateVaultMasterPassLabel" Text="Master Password" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <PasswordBox x:Name="CreateMasterPassword" Style="{StaticResource ModernPasswordBox}" Margin="0,0,0,16"/>
+                        <PasswordBox x:Name="CreateMasterPassword" Margin="0,0,0,16"/>
 
                         <TextBlock x:Name="CreateVaultConfirmLabel" Text="Confirm Password" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <PasswordBox x:Name="ConfirmMasterPassword" Style="{StaticResource ModernPasswordBox}" Margin="0,0,0,24"/>
+                        <PasswordBox x:Name="ConfirmMasterPassword" Margin="0,0,0,24"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <Button x:Name="CancelCreateBtn" Content="Cancel" Style="{StaticResource SecondaryButton}"
+                            <ui:Button x:Name="CancelCreateBtn" Content="Cancel" Appearance="Secondary"
                                     Click="CancelCreateVault_Click" Margin="0,0,12,0" Width="120"/>
-                            <Button x:Name="CreateVaultBtn" Content="Create Vault" Style="{StaticResource PrimaryButton}"
+                            <ui:Button x:Name="CreateVaultBtn" Content="Create Vault" Appearance="Primary"
                                     Click="CreateVault_Click" HorizontalAlignment="Stretch"/>
                         </StackPanel>
                     </StackPanel>
@@ -345,12 +329,12 @@
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,20"/>
 
                         <TextBlock x:Name="UnlockMasterPassLabel" Text="Master Password" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                        <PasswordBox x:Name="UnlockPassword" Style="{StaticResource ModernPasswordBox}" Margin="0,0,0,24"/>
+                        <PasswordBox x:Name="UnlockPassword" Margin="0,0,0,24"/>
 
                         <StackPanel Orientation="Horizontal">
-                            <Button x:Name="BackToVaultsBtn" Content="Back" Style="{StaticResource SecondaryButton}"
+                            <ui:Button x:Name="BackToVaultsBtn" Content="Back" Appearance="Secondary"
                                     Click="BackToVaults_Click" Margin="0,0,12,0" Width="120"/>
-                            <Button x:Name="UnlockBtn" Content="Unlock Vault" Style="{StaticResource PrimaryButton}"
+                            <ui:Button x:Name="UnlockBtn" Content="Unlock Vault" Appearance="Primary"
                                     Click="Unlock_Click" HorizontalAlignment="Stretch"/>
                         </StackPanel>
                     </StackPanel>
@@ -410,14 +394,14 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="&#x1F50D;" FontSize="18" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBox Grid.Column="1" x:Name="SearchBox" Style="{StaticResource ModernTextBox}"
+                            <TextBox Grid.Column="1" x:Name="SearchBox"
                                      Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
                                      Tag="Search credentials..."/>
                         </Grid>
                     </Border>
 
                     <!-- Add Button -->
-                    <Button Grid.Row="2" x:Name="AddNewBtn" Content="+ Add New" Style="{StaticResource PrimaryButton}"
+                    <ui:Button Grid.Row="2" x:Name="AddNewBtn" Content="+ Add New" Appearance="Primary"
                             Margin="16,0,16,16" Click="AddCredential_Click"/>
 
                     <!-- Credentials List -->
@@ -463,7 +447,7 @@
                     </ListBox>
 
                     <!-- Lock Button -->
-                    <Button Grid.Row="4" x:Name="LockBtn" Content="Lock Vault" Style="{StaticResource SecondaryButton}"
+                    <ui:Button Grid.Row="4" x:Name="LockBtn" Content="Lock Vault" Appearance="Secondary"
                             Margin="16,16,16,40" Click="Lock_Click"/>
                 </Grid>
             </Border>
@@ -471,7 +455,7 @@
             <!-- Main Content Area -->
             <Grid Grid.Column="1" Background="{StaticResource PrimaryDarkBrush}">
                 <!-- Settings Button (top right) -->
-                <Button x:Name="MainSettingsBtn" Style="{StaticResource IconButton}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                <ui:Button x:Name="MainSettingsBtn" Appearance="Transparent" HorizontalAlignment="Right" VerticalAlignment="Top"
                         Margin="20" FontSize="20" Click="SettingsBtn_Click" Content="⚙"/>
 
                 <!-- No Selection State -->
@@ -522,9 +506,9 @@
                             </StackPanel>
 
                             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                <Button x:Name="EditBtn" Content="✏️" Style="{StaticResource IconButton}" ToolTip="Edit"
+                                <ui:Button x:Name="EditBtn" Content="✏️" Appearance="Transparent" ToolTip="Edit"
                                         Click="EditCredential_Click" FontSize="18"/>
-                                <Button x:Name="DeleteBtn" Content="🗑️" Style="{StaticResource IconButton}" ToolTip="Delete"
+                                <ui:Button x:Name="DeleteBtn" Content="🗑️" Appearance="Transparent" ToolTip="Delete"
                                         Click="DeleteCredential_Click" FontSize="18" Margin="4,0"/>
                             </StackPanel>
                         </Grid>
@@ -543,7 +527,7 @@
                                         <TextBlock x:Name="UsernameText" FontSize="16"
                                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,4,0,0"/>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="📋" Style="{StaticResource IconButton}" ToolTip="Copy"
+                                    <ui:Button Grid.Column="1" Content="📋" Appearance="Transparent" ToolTip="Copy"
                                             Click="CopyUsername_Click"/>
                                 </Grid>
 
@@ -558,7 +542,7 @@
                                         <TextBlock x:Name="EmailText" FontSize="16"
                                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,4,0,0"/>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="📋" Style="{StaticResource IconButton}" ToolTip="Copy"
+                                    <ui:Button Grid.Column="1" Content="📋" Appearance="Transparent" ToolTip="Copy"
                                             Click="CopyEmail_Click"/>
                                 </Grid>
 
@@ -579,9 +563,9 @@
                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                    TextWrapping="Wrap"/>
                                     </StackPanel>
-                                    <Button Grid.Column="1" x:Name="ShowPasswordBtn" Content="👁️" Style="{StaticResource IconButton}" ToolTip="Show"
+                                    <ui:Button Grid.Column="1" x:Name="ShowPasswordBtn" Content="👁️" Appearance="Transparent" ToolTip="Show"
                                             Click="ShowPassword_Click"/>
-                                    <Button Grid.Column="2" Content="📋" Style="{StaticResource IconButton}" ToolTip="Copy"
+                                    <ui:Button Grid.Column="2" Content="📋" Appearance="Transparent" ToolTip="Copy"
                                             Click="CopyPassword_Click"/>
                                 </Grid>
 
@@ -597,7 +581,7 @@
                                                     Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"
                                                     Cursor="Hand" MouseLeftButtonDown="WebsiteText_MouseDown"/>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="📋" Style="{StaticResource IconButton}" ToolTip="Copy"
+                                    <ui:Button Grid.Column="1" Content="📋" Appearance="Transparent" ToolTip="Copy"
                                             Click="CopyWebsite_Click"/>
                                 </Grid>
                             </StackPanel>
@@ -645,7 +629,7 @@
                             <Grid>
                                 <TextBlock x:Name="PanelTitle" Text="Add New Credential" FontSize="18" FontWeight="SemiBold"
                                            Foreground="{StaticResource TextPrimaryBrush}"/>
-                                <Button Content="✕" Style="{StaticResource IconButton}" HorizontalAlignment="Right"
+                                <ui:Button Content="✕" Appearance="Transparent" HorizontalAlignment="Right"
                                         Click="ClosePanel_Click" FontSize="16"/>
                             </Grid>
                         </Border>
@@ -654,13 +638,13 @@
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Hidden" Padding="24,20">
                             <StackPanel>
                                 <TextBlock x:Name="TitleLabel" Text="Title *" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBox x:Name="EditTitle" Style="{StaticResource ModernTextBox}" Margin="0,0,0,16"/>
+                                <TextBox x:Name="EditTitle" Margin="0,0,0,16"/>
 
                                 <TextBlock x:Name="UsernameEditLabel" Text="Username" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBox x:Name="EditUsername" Style="{StaticResource ModernTextBox}" Margin="0,0,0,16"/>
+                                <TextBox x:Name="EditUsername" Margin="0,0,0,16"/>
 
                                 <TextBlock x:Name="EmailEditLabel" Text="Email" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBox x:Name="EditEmail" Style="{StaticResource ModernTextBox}" Margin="0,0,0,16"/>
+                                <TextBox x:Name="EditEmail" Margin="0,0,0,16"/>
 
                                 <TextBlock x:Name="PasswordEditLabel" Text="Password" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
                                 <Grid Margin="0,0,0,16">
@@ -670,13 +654,13 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <Grid Grid.Column="0">
-                                        <PasswordBox x:Name="EditPassword" Style="{StaticResource ModernPasswordBox}"/>
-                                        <TextBox x:Name="EditPasswordVisible" Style="{StaticResource ModernTextBox}" 
+                                        <PasswordBox x:Name="EditPassword"/>
+                                        <TextBox x:Name="EditPasswordVisible" 
                                                  Visibility="Collapsed" FontFamily="Consolas"/>
                                     </Grid>
-                                    <Button Grid.Column="1" Content="🎲" Style="{StaticResource IconButton}" ToolTip="Generate"
+                                    <ui:Button Grid.Column="1" Content="🎲" Appearance="Transparent" ToolTip="Generate"
                                             Click="ToggleGenerator_Click" Margin="4,0"/>
-                                    <Button Grid.Column="2" x:Name="ShowEditPasswordBtn" Content="👁️" Style="{StaticResource IconButton}" ToolTip="Show"
+                                    <ui:Button Grid.Column="2" x:Name="ShowEditPasswordBtn" Content="👁️" Appearance="Transparent" ToolTip="Show"
                                             Click="ShowEditPassword_Click"/>
                                 </Grid>
 
@@ -691,11 +675,11 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock x:Name="GeneratorTitle" Grid.Column="0" Text="Password Generator" FontSize="14" FontWeight="SemiBold"
                                                        Foreground="{StaticResource TextPrimaryBrush}"/>
-                                            <Button Grid.Column="1" Content="🔄" Style="{StaticResource IconButton}" ToolTip="Regenerate"
+                                            <ui:Button Grid.Column="1" Content="🔄" Appearance="Transparent" ToolTip="Regenerate"
                                                     Click="RegeneratePassword_Click"/>
                                         </Grid>
 
-                                        <TextBox x:Name="GeneratedPassword" Style="{StaticResource ModernTextBox}" IsReadOnly="True" Margin="0,0,0,12"/>
+                                        <TextBox x:Name="GeneratedPassword" IsReadOnly="True" Margin="0,0,0,12"/>
 
                                         <Grid Margin="0,0,0,12">
                                             <Grid.ColumnDefinitions>
@@ -710,13 +694,13 @@
                                         </Grid>
 
                                         <StackPanel Margin="0,0,0,12">
-                                            <CheckBox x:Name="ChkLowercase" Content="Lowercase (a-z)" Style="{StaticResource ModernCheckBox}"
+                                            <CheckBox x:Name="ChkLowercase" Content="Lowercase (a-z)"
                                                       IsChecked="True" Checked="GeneratorOption_Changed" Unchecked="GeneratorOption_Changed"/>
-                                            <CheckBox x:Name="ChkUppercase" Content="Uppercase (A-Z)" Style="{StaticResource ModernCheckBox}"
+                                            <CheckBox x:Name="ChkUppercase" Content="Uppercase (A-Z)"
                                                       IsChecked="True" Margin="0,8,0,0" Checked="GeneratorOption_Changed" Unchecked="GeneratorOption_Changed"/>
-                                            <CheckBox x:Name="ChkDigits" Content="Numbers (0-9)" Style="{StaticResource ModernCheckBox}"
+                                            <CheckBox x:Name="ChkDigits" Content="Numbers (0-9)"
                                                       IsChecked="True" Margin="0,8,0,0" Checked="GeneratorOption_Changed" Unchecked="GeneratorOption_Changed"/>
-                                            <CheckBox x:Name="ChkSpecial" Content="Special (!@#$...)" Style="{StaticResource ModernCheckBox}"
+                                            <CheckBox x:Name="ChkSpecial" Content="Special (!@#$...)"
                                                       IsChecked="True" Margin="0,8,0,0" Checked="GeneratorOption_Changed" Unchecked="GeneratorOption_Changed"/>
                                         </StackPanel>
 
@@ -733,16 +717,16 @@
                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                    HorizontalAlignment="Left" TextWrapping="Wrap"/>
 
-                                        <Button x:Name="UsePasswordBtn" Content="Use Password" Style="{StaticResource PrimaryButton}"
+                                        <ui:Button x:Name="UsePasswordBtn" Content="Use Password" Appearance="Primary"
                                                 HorizontalAlignment="Stretch" Click="UseGenerated_Click"/>
                                     </StackPanel>
                                 </Border>
 
                                 <TextBlock x:Name="WebsiteEditLabel" Text="Website" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBox x:Name="EditWebsite" Style="{StaticResource ModernTextBox}" Margin="0,0,0,16"/>
+                                <TextBox x:Name="EditWebsite" Margin="0,0,0,16"/>
 
                                 <TextBlock x:Name="NotesEditLabel" Text="Notes" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
-                                <TextBox x:Name="EditNotes" Style="{StaticResource ModernTextBox}" Height="80"
+                                <TextBox x:Name="EditNotes" Height="80"
                                          TextWrapping="Wrap" AcceptsReturn="True" VerticalContentAlignment="Top"/>
                             </StackPanel>
                         </ScrollViewer>
@@ -750,8 +734,8 @@
                         <!-- Footer -->
                         <Border Grid.Row="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,16">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button x:Name="CancelBtn" Content="Cancel" Style="{StaticResource SecondaryButton}" Click="CancelEdit_Click" Margin="0,0,12,0"/>
-                                <Button x:Name="SaveBtn" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveCredential_Click"/>
+                                <ui:Button x:Name="CancelBtn" Content="Cancel" Appearance="Secondary" Click="CancelEdit_Click" Margin="0,0,12,0"/>
+                                <ui:Button x:Name="SaveBtn" Content="Save" Appearance="Primary" Click="SaveCredential_Click"/>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -780,12 +764,12 @@
                     <TextBlock x:Name="DialogMessage" Text="" FontSize="14"
                                Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,28"
                                TextWrapping="Wrap" LineHeight="20"/>
-                    <ComboBox x:Name="DialogVaultComboBox" Style="{StaticResource ModernComboBox}"
+                    <ComboBox x:Name="DialogVaultComboBox"
                               Margin="0,0,0,28" Visibility="Collapsed"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button x:Name="DialogCancelBtn" Content="Cancel" Style="{StaticResource SecondaryButton}"
+                        <ui:Button x:Name="DialogCancelBtn" Content="Cancel" Appearance="Secondary"
                                 Width="140" Margin="0,0,10,0" Click="DialogCancelBtn_Click" Visibility="Collapsed"/>
-                        <Button x:Name="DialogOkBtn" Content="OK" Style="{StaticResource PrimaryButton}"
+                        <ui:Button x:Name="DialogOkBtn" Content="OK" Appearance="Primary"
                                 Width="140" Click="DialogOkBtn_Click"/>
                     </StackPanel>
                 </StackPanel>
