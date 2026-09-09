@@ -619,7 +619,7 @@ public partial class MainWindow : Window
     private void ShowCreateVaultForm_Click(object sender, RoutedEventArgs e)
     {
         VaultSelectionPanel.Visibility = Visibility.Collapsed;
-        CreateVaultForm.Visibility = Visibility.Visible;
+        ShowPanel(CreateVaultForm);
         UnlockForm.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
         NewVaultName.Text = "";
@@ -637,7 +637,7 @@ public partial class MainWindow : Window
         ShowScreen(LoginScreen);
         MainApp.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Collapsed;
-        VaultSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(VaultSelectionPanel);
         CreateVaultForm.Visibility = Visibility.Collapsed;
         UnlockForm.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
@@ -667,7 +667,7 @@ public partial class MainWindow : Window
 
             VaultSelectionPanel.Visibility = Visibility.Collapsed;
             CreateVaultForm.Visibility = Visibility.Collapsed;
-            UnlockForm.Visibility = Visibility.Visible;
+            ShowPanel(UnlockForm);
             LoginStatusMessage.Text = "";
             UnlockPassword.Password = "";
 
@@ -728,11 +728,11 @@ public partial class MainWindow : Window
         if (_storageService.VaultExists())
         {
             CreateVaultForm.Visibility = Visibility.Collapsed;
-            UnlockForm.Visibility = Visibility.Visible;
+            ShowPanel(UnlockForm);
         }
         else
         {
-            CreateVaultForm.Visibility = Visibility.Visible;
+            ShowPanel(CreateVaultForm);
             UnlockForm.Visibility = Visibility.Collapsed;
         }
     }
@@ -910,7 +910,7 @@ public partial class MainWindow : Window
         // Reset view to show only the credentials list
         AddEditPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
-        NoSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(NoSelectionPanel);
         
         _viewModel.FilterCredentials();
         _viewModel.SelectedCredential = null;
@@ -928,7 +928,7 @@ public partial class MainWindow : Window
         _viewModel.StartAddCredential();
         PanelTitle.Text = _localization["AddNewCredential"];
         ClearEditForm();
-        AddEditPanel.Visibility = Visibility.Visible;
+        ShowPanel(AddEditPanel);
         NoSelectionPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Collapsed;
@@ -953,7 +953,7 @@ public partial class MainWindow : Window
         EditWebsite.Text = credential.Website;
         EditNotes.Text = credential.Notes;
         
-        AddEditPanel.Visibility = Visibility.Visible;
+        ShowPanel(AddEditPanel);
         NoSelectionPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Collapsed;
@@ -1071,7 +1071,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            GeneratorPanel.Visibility = Visibility.Visible;
+            ShowPanel(GeneratorPanel);
             GeneratePassword();
         }
     }
@@ -1305,8 +1305,7 @@ public partial class MainWindow : Window
         if (credential != null)
         {
             NoSelectionPanel.Visibility = Visibility.Collapsed;
-            CredentialDetails.Visibility = Visibility.Visible;
-            CrossFadeDetails();
+            ShowPanel(CredentialDetails);
             MainSettingsBtn.Visibility = Visibility.Collapsed;
             
             UsernameText.Text = credential.Username;
@@ -1337,11 +1336,19 @@ public partial class MainWindow : Window
 
     // Every transition goes through MotionSettings, so turning animation off in
     // Windows makes them instant rather than merely quicker.
-    private static void ShowScreen(FrameworkElement screen)
+    private static void ShowScreen(FrameworkElement screen) =>
+        FadeIn(screen, MotionSettings.ScreenTransition);
+
+    // Panels swapping inside a screen - the create form, the generator, the details
+    // pane - move a shorter distance conceptually, so they get a shorter fade.
+    private static void ShowPanel(FrameworkElement panel) =>
+        FadeIn(panel, MotionSettings.PanelTransition);
+
+    private static void FadeIn(FrameworkElement screen, TimeSpan requested)
     {
         screen.Visibility = Visibility.Visible;
 
-        var duration = MotionSettings.Scale(MotionSettings.ScreenTransition);
+        var duration = MotionSettings.Scale(requested);
         if (duration == TimeSpan.Zero)
         {
             screen.BeginAnimation(UIElement.OpacityProperty, null);
@@ -1386,23 +1393,6 @@ public partial class MainWindow : Window
             new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
     }
 
-    private void CrossFadeDetails()
-    {
-        var duration = MotionSettings.Scale(MotionSettings.DetailCrossFade);
-        if (duration == TimeSpan.Zero)
-        {
-            CredentialDetails.BeginAnimation(UIElement.OpacityProperty, null);
-            CredentialDetails.Opacity = 1;
-            return;
-        }
-
-        CredentialDetails.BeginAnimation(UIElement.OpacityProperty,
-            new DoubleAnimation(0, 1, duration)
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-    }
-
     private void AnimateStrengthFill(double targetWidth)
     {
         var duration = MotionSettings.Scale(MotionSettings.StrengthBar);
@@ -1429,7 +1419,7 @@ public partial class MainWindow : Window
 
     private void ShowNoSelection()
     {
-        NoSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(NoSelectionPanel);
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Visible;
     }

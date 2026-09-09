@@ -16,9 +16,10 @@ namespace CipherVault.Services;
 /// </summary>
 public static class MotionSettings
 {
-    public static readonly TimeSpan ScreenTransition = TimeSpan.FromMilliseconds(180);
-    public static readonly TimeSpan DialogTransition = TimeSpan.FromMilliseconds(120);
-    public static readonly TimeSpan DetailCrossFade = TimeSpan.FromMilliseconds(120);
+    public static readonly TimeSpan ScreenTransition = TimeSpan.FromMilliseconds(200);
+    public static readonly TimeSpan PanelTransition = TimeSpan.FromMilliseconds(170);
+    public static readonly TimeSpan DialogTransition = TimeSpan.FromMilliseconds(160);
+    public static readonly TimeSpan DetailCrossFade = TimeSpan.FromMilliseconds(170);
     public static readonly TimeSpan StrengthBar = TimeSpan.FromMilliseconds(250);
 
     public static bool AnimationsEnabled => SystemParameters.ClientAreaAnimation;
