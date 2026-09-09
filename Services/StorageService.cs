@@ -104,31 +104,8 @@ public class StorageService : IDisposable
         {
             throw new InvalidOperationException($"Vault version {config.Version} is not supported. Please update CipherVault.");
         }
-
-        if (config.Version < CurrentVersion)
-        {
-            MigrateVault(config);
-        }
     }
 
-    private void MigrateVault(VaultConfig config)
-    {
-        while (config.Version < CurrentVersion)
-        {
-            switch (config.Version)
-            {
-                case 1:
-                    throw new InvalidOperationException("Vault v1 is not supported in v2. Please delete vault data and create a new vault.");
-                default:
-                    throw new InvalidOperationException($"Migration from version {config.Version} not implemented");
-            }
-        }
-    }
-
-    /// <summary>
-    /// Verifies the master password and, on success, opens the vault. The password
-    /// buffer belongs to the caller and is neither retained nor wiped here.
-    /// </summary>
     public (bool Success, string? ErrorMessage, int RemainingSeconds) VerifyPassword(ReadOnlySpan<byte> masterPassword)
     {
         // Record failed attempt even during lockout to increase future delays
