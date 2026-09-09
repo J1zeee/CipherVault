@@ -1,18 +1,24 @@
-using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace CipherVault.Services;
 
-public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
+/// <summary>
+/// Deliberately NOT an IMemoryOwner&lt;byte&gt;. Handing out a Memory&lt;byte&gt; over this
+/// buffer would let the plaintext view be stored in a field or carried across an
+/// await, and read after EndAccess has re-encrypted the contents or after Dispose has
+/// released the page - a read of freed unmanaged memory that nothing can detect.
+/// Span&lt;byte&gt; is a ref struct, so the compiler enforces what this type needs: the
+/// view cannot outlive the BeginAccess/EndAccess window it was taken in.
+/// </summary>
+public sealed class SecureBuffer : IDisposable
 {
     private IntPtr _ptr;
     private int _size;
     private bool _isDisposed;
     private bool _isLocked;
     private bool _isProtected;
-    private static readonly object _lockObj = new();
-    private byte[]? _managedBuffer;
+    private readonly object _lockObj = new();
 
     private const int MEM_COMMIT = 0x1000;
     private const int MEM_RESERVE = 0x2000;
@@ -45,7 +51,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             throw new ArgumentOutOfRangeException(nameof(sizeInBytes));
 
         _size = sizeInBytes;
-        _managedBuffer = new byte[sizeInBytes];
         _ptr = VirtualAlloc(IntPtr.Zero, sizeInBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
         if (_ptr == IntPtr.Zero)
@@ -53,15 +58,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
 
         GC.AddMemoryPressure(sizeInBytes);
         Lock();
-    }
-
-    public Memory<byte> Memory
-    {
-        get
-        {
-            ThrowIfDisposed();
-            return _managedBuffer.AsMemory(0, _size);
-        }
     }
 
     public Span<byte> Span
@@ -76,6 +72,13 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
         }
     }
 
+    /// <summary>
+    /// True while the page is pinned in RAM by VirtualLock. Plaintext must never sit
+    /// on an unpinned page - Windows is free to write such a page to the swap file,
+    /// where the key outlives the process.
+    /// </summary>
+    public bool IsPagePinned => _isLocked;
+
     public void Clear()
     {
         ThrowIfDisposed();
@@ -89,9 +92,8 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
         if (data.Length > _size)
             throw new ArgumentException("Data too large for buffer");
 
-        Unlock();
-        data.CopyTo(GetSpan().Slice(0, data.Length));
         Lock();
+        data.CopyTo(GetSpan().Slice(0, data.Length));
     }
 
     public void Write(byte[] data)
@@ -110,31 +112,35 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
     public void FillRandom()
     {
         ThrowIfDisposed();
-        Unlock();
-        RandomNumberGenerator.Fill(GetSpan());
         Lock();
+        RandomNumberGenerator.Fill(GetSpan());
     }
 
     public Span<byte> GetWritableSpan()
     {
         ThrowIfDisposed();
-        Unlock();
+        Lock();
         unsafe
         {
             return new Span<byte>(_ptr.ToPointer(), _size);
         }
     }
 
-    public void CommitAndProtect()
+    /// <summary>
+    /// Makes the content readable. The page stays pinned in RAM for the whole
+    /// lifetime of the buffer; only the CryptProtectMemory layer is toggled.
+    /// </summary>
+    public void BeginAccess()
+    {
+        UnprotectMemory();
+        Lock();
+    }
+
+    /// <summary>Re-encrypts the content in place once the caller is done with it.</summary>
+    public void EndAccess()
     {
         Lock();
         ProtectMemory();
-    }
-
-    public void UnprotectAndUnlock()
-    {
-        UnprotectMemory();
-        Unlock();
     }
 
     public void ProtectMemory()
@@ -151,7 +157,6 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             {
                 if (CryptProtectMemory(_ptr, (uint)_size, CRYPTPROTECTMEMORY_SAME_PROCESS))
                 {
-                    Unlock();
                     _isProtected = true;
                 }
             }
@@ -232,33 +237,42 @@ public sealed class SecureBuffer : IMemoryOwner<byte>, IDisposable
             if (_isDisposed)
                 return;
 
-            Unlock();
-
-            if (_ptr != IntPtr.Zero)
-            {
-                var sizeToRelease = _size;
-                SecureZero();
-                VirtualFree(_ptr, 0, MEM_RELEASE);
-                _ptr = IntPtr.Zero;
-                GC.RemoveMemoryPressure(sizeToRelease);
-            }
-
-            if (_managedBuffer != null)
-            {
-                CryptographicOperations.ZeroMemory(_managedBuffer);
-                _managedBuffer = null;
-            }
-
-            _size = 0;
-            _isDisposed = true;
-            _isProtected = false;
-            GC.SuppressFinalize(this);
+            ReleaseResources();
         }
+
+        GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// This buffer owns VirtualAlloc'd memory, which is precisely what a finalizer is
+    /// for - it is the one kept in this codebase. It deliberately does NOT take the
+    /// lock: whoever holds it may be blocked, and a stalled finalizer thread stalls
+    /// cleanup for the whole process.
+    /// </summary>
     ~SecureBuffer()
     {
-        Dispose();
+        if (_isDisposed)
+            return;
+
+        ReleaseResources();
+    }
+
+    private void ReleaseResources()
+    {
+        Unlock();
+
+        if (_ptr != IntPtr.Zero)
+        {
+            var sizeToRelease = _size;
+            SecureZero();
+            VirtualFree(_ptr, 0, MEM_RELEASE);
+            _ptr = IntPtr.Zero;
+            GC.RemoveMemoryPressure(sizeToRelease);
+        }
+
+        _size = 0;
+        _isDisposed = true;
+        _isProtected = false;
     }
 }
 
@@ -281,122 +295,5 @@ public static class SecureMemory
     public static bool FixedTimeEquals(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
     {
         return CryptographicOperations.FixedTimeEquals(a, b);
-    }
-}
-
-public static class SecureStringHelper
-{
-    public static SecureBuffer StringToSecureBytes(string? str)
-    {
-        if (string.IsNullOrEmpty(str))
-            return new SecureBuffer(0);
-
-        var bytes = System.Text.Encoding.UTF8.GetBytes(str);
-        var buffer = new SecureBuffer(bytes.Length);
-        buffer.Write(bytes);
-
-        CryptographicOperations.ZeroMemory(bytes);
-        Array.Clear(bytes, 0, bytes.Length);
-
-        return buffer;
-    }
-
-    public static string SecureBytesToString(SecureBuffer buffer)
-    {
-        var bytes = buffer.ToArray();
-        var str = System.Text.Encoding.UTF8.GetString(bytes);
-
-        CryptographicOperations.ZeroMemory(bytes);
-        Array.Clear(bytes, 0, bytes.Length);
-        buffer.Clear();
-
-return str;
-    }
-}
-
-public sealed class SecureSession : IDisposable
-{
-    private SecureBuffer? _masterKey;
-    private DateTime _createdAt;
-    private readonly TimeSpan _maxLifetime;
-    private bool _isDisposed;
-    private static readonly object _lockObj = new();
-
-    public SecureSession(int keySizeBytes = 32, TimeSpan? maxLifetime = null)
-    {
-        _maxLifetime = maxLifetime ?? TimeSpan.FromSeconds(30);
-        _createdAt = DateTime.UtcNow;
-        _masterKey = SecureMemory.Allocate(keySizeBytes);
-    }
-
-    public void RefreshActivity()
-    {
-        ThrowIfDisposed();
-        _createdAt = DateTime.UtcNow;
-    }
-
-    public void SetMasterKey(ReadOnlySpan<byte> key)
-    {
-        ThrowIfDisposed();
-        _masterKey!.Write(key);
-        _createdAt = DateTime.UtcNow;
-    }
-
-    public Span<byte> GetMasterKeySpan()
-    {
-        ThrowIfDisposed();
-        return _masterKey!.GetWritableSpan();
-    }
-
-    public void CommitAndProtect()
-    {
-        ThrowIfDisposed();
-        _masterKey!.CommitAndProtect();
-    }
-
-    public bool IsExpired => DateTime.UtcNow - _createdAt > _maxLifetime;
-
-    public TimeSpan RemainingTime => _maxLifetime - (DateTime.UtcNow - _createdAt);
-
-    public void Refresh()
-    {
-        ThrowIfDisposed();
-        _createdAt = DateTime.UtcNow;
-    }
-
-    public void ClearAndRefresh()
-    {
-        ThrowIfDisposed();
-        _masterKey!.Clear();
-        _createdAt = DateTime.UtcNow;
-    }
-
-    private void ThrowIfDisposed()
-    {
-        if (_isDisposed)
-            throw new ObjectDisposedException(nameof(SecureSession));
-    }
-
-    public void Dispose()
-    {
-        if (_isDisposed)
-            return;
-
-        lock (_lockObj)
-        {
-            if (_isDisposed)
-                return;
-
-            _masterKey?.Clear();
-            _masterKey?.Dispose();
-            _masterKey = null;
-            _isDisposed = true;
-            GC.SuppressFinalize(this);
-        }
-    }
-
-    ~SecureSession()
-    {
-        Dispose();
     }
 }

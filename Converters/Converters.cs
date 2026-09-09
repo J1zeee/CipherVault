@@ -18,6 +18,20 @@ public class StringToVisibilityConverter : IValueConverter
     }
 }
 
+public class FirstCharConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var text = value as string;
+        return string.IsNullOrEmpty(text) ? "" : text.Substring(0, 1);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
 public class CategoryColorConverter : IValueConverter
 {
     private static readonly Dictionary<string, (Color Start, Color End)> CategoryColors = new()

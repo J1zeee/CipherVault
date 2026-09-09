@@ -15,7 +15,7 @@ public class Credential : INotifyPropertyChanged, IDisposable
     private SecureBuffer? _websiteBuffer;
     private SecureBuffer? _notesBuffer;
     private bool _isDisposed;
-    private static readonly object _lockObj = new();
+    private readonly object _lockObj = new();
 
     [JsonIgnore]
     public string Title
@@ -116,22 +116,21 @@ public class Credential : INotifyPropertyChanged, IDisposable
             {
                 try
                 {
-                    buffer.UnprotectAndUnlock();
+                    buffer.BeginAccess();
                     var span = buffer.Span;
                     var result = System.Text.Encoding.UTF8.GetString(span);
                     result = result.TrimEnd('\0');
-                    buffer.CommitAndProtect();
+                    buffer.EndAccess();
                     
-                    // Return space if empty to allow Title[0] binding to work
-                    return string.IsNullOrEmpty(result) ? " " : result;
+                    return result;
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"GetSecureString error for {fieldName}: {ex.Message}");
-                    return " ";
+                    return "";
                 }
             }
-            return " ";
+            return "";
         }
     }
 
@@ -153,7 +152,7 @@ public class Credential : INotifyPropertyChanged, IDisposable
                 var paddedLength = ((bytes.Length + 15) / 16) * 16;
                 var buffer = SecureMemory.Allocate(paddedLength);
                 buffer.Write(bytes);
-                buffer.CommitAndProtect();
+                buffer.EndAccess();
 
                 CryptographicOperations.ZeroMemory(bytes);
                 Array.Clear(bytes, 0, bytes.Length);
@@ -269,10 +268,9 @@ public class Credential : INotifyPropertyChanged, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~Credential()
-    {
-        Dispose();
-    }
+    // No finalizer: Dispose raises PropertyChanged straight into WPF bindings, which
+    // must never happen on the finalizer thread. The pinned memory behind each field
+    // belongs to SecureBuffer, which has its own finalizer for exactly that purpose.
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

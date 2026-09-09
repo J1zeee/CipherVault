@@ -1,4 +1,7 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -27,18 +30,21 @@ public partial class MainWindow : Window
     private DateTime _lastActivity;
     private bool _isVaultUnlocked;
     private Grid? _previousScreen;
-    private string _vaultPath = "";
+    private readonly VaultPaths _vaultPaths;
+    private readonly AppSettingsStore _settings;
     private VaultInfo? _selectedVault;
 
-    private const uint WDA_MONITOR = 0x00000001;
-    private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
 
-    // Downgraded to WDA_MONITOR once if the OS is older than Windows 10 2004.
-    private static uint _captureAffinity = WDA_EXCLUDEFROMCAPTURE;
+    // Cleared once if the OS is older than Windows 10 2004 and cannot exclude from capture.
+    private static bool _excludeFromCaptureSupported = true;
+    private static bool _screenCaptureProtectionEnabled = true;
+
+    private static uint CurrentCaptureAffinity =>
+        ScreenCaptureAffinity.For(_screenCaptureProtectionEnabled, _excludeFromCaptureSupported);
 
     private const int AutoLockTimeoutMinutes = 1;
     private const int ClipboardClearSeconds = 10;
@@ -67,8 +73,16 @@ public partial class MainWindow : Window
         
         _vaultManager = VaultManagerService.Instance;
         
+        _settings = new AppSettingsStore(GetConfigDirectory());
+        // Logging is a persisted preference; it used to reset to off on every start
+        // while the checkbox still claimed to remember it.
+        AuditService.LoggingEnabled = _settings.GetBool(AppSettingsStore.LoggingEnabledKey);
+        _screenCaptureProtectionEnabled =
+            _settings.GetBool(AppSettingsStore.ScreenCaptureProtectionKey, defaultValue: true);
+
+        _vaultPaths = new VaultPaths(GetDefaultVaultRoot());
         LoadPathSettings();
-        _storageService = new StorageService(_vaultPath);
+        _storageService = new StorageService(_vaultPaths.ActivePath);
         _passwordGenerator = new PasswordGenerator();
         _viewModel = new MainViewModel(_storageService);
         DataContext = _viewModel;
@@ -124,8 +138,8 @@ public partial class MainWindow : Window
         // Clear all password fields
         ClearAllPasswords();
         
-        // Clear clipboard
-        try { Clipboard.Clear(); } catch { }
+        // Clear clipboard, but only if it still holds what this app put there.
+        SecureClipboard.TryClearOurs();
     }
 
     private void ClearAllPasswords()
@@ -156,10 +170,8 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        if (_isVaultUnlocked)
-        {
-            _autoLockTimer.Stop();
-        }
+        // The timer deliberately keeps running: losing focus is exactly when an
+        // unattended vault should still lock itself.
     }
 
     private void Window_Activated(object? sender, EventArgs e)
@@ -196,13 +208,11 @@ public partial class MainWindow : Window
     {
         _clipboardClearTimer.Stop();
         
-        try
+        if (SecureClipboard.TryClearOurs())
         {
-            Clipboard.Clear();
             StatusMessage.Text = _localization["ClipboardCleared"];
             _storageService.LogClipboardCleared();
         }
-        catch { }
     }
 
     private string FormatLockoutTime(int totalSeconds)
@@ -241,6 +251,9 @@ public partial class MainWindow : Window
         CreateVaultBtn.IsEnabled = false;
         CreateMasterPassword.IsEnabled = false;
         ConfirmMasterPassword.IsEnabled = false;
+        // Otherwise the lockout is escaped by stepping back to the list and
+        // reselecting the vault.
+        BackToVaultsBtn.IsEnabled = false;
         
         _lockoutTimer.Start();
     }
@@ -254,19 +267,21 @@ public partial class MainWindow : Window
         CreateVaultBtn.IsEnabled = true;
         CreateMasterPassword.IsEnabled = true;
         ConfirmMasterPassword.IsEnabled = true;
+        BackToVaultsBtn.IsEnabled = true;
         
         LoginStatusMessage.Text = "";
     }
 
-    private void LockVault()
+    // Drops the master key and every decrypted credential without navigating.
+    // Deleting a vault needs this too: the secrets must not outlive the files.
+    private void CloseVaultSession()
     {
         _isVaultUnlocked = false;
         _autoLockTimer.Stop();
         _clipboardClearTimer.Stop();
-        _lockoutTimer.Stop();
-        
+
         _storageService.ClearMasterKey();
-        
+
         foreach (var cred in _viewModel.Credentials)
         {
             cred.SecureClear();
@@ -275,10 +290,16 @@ public partial class MainWindow : Window
         _viewModel.Credentials.Clear();
         _viewModel.FilterCredentials();
         _viewModel.SelectedCredential = null;
-        
+
         ClearAllPasswords();
+    }
+
+    private void LockVault()
+    {
+        CloseVaultSession();
+        _lockoutTimer.Stop();
         
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         MainApp.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
@@ -289,7 +310,7 @@ public partial class MainWindow : Window
     private void SwitchToMainApp()
     {
         SettingsPanel.Visibility = Visibility.Collapsed;
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         _previousScreen = null;
     }
 
@@ -341,7 +362,7 @@ public partial class MainWindow : Window
         {
             if (source is HwndSource hwndSource && !hwndSource.IsDisposed)
             {
-                TrySetCaptureAffinity(hwndSource.Handle, _captureAffinity);
+                TrySetCaptureAffinity(hwndSource.Handle, CurrentCaptureAffinity);
             }
         }
     }
@@ -402,7 +423,7 @@ public partial class MainWindow : Window
     {
         var handle = new WindowInteropHelper(this).Handle;
 
-        if (TrySetCaptureAffinity(handle, _captureAffinity))
+        if (TrySetCaptureAffinity(handle, CurrentCaptureAffinity))
         {
             return;
         }
@@ -410,10 +431,11 @@ public partial class MainWindow : Window
         // WDA_EXCLUDEFROMCAPTURE needs Windows 10 2004 (build 19041). On older builds
         // fall back to WDA_MONITOR: capture APIs still get a black window, only DWM
         // thumbnails stay visible.
-        if (_captureAffinity == WDA_EXCLUDEFROMCAPTURE
-            && TrySetCaptureAffinity(handle, WDA_MONITOR))
+        if (_excludeFromCaptureSupported
+            && _screenCaptureProtectionEnabled
+            && TrySetCaptureAffinity(handle, ScreenCaptureAffinity.Monitor))
         {
-            _captureAffinity = WDA_MONITOR;
+            _excludeFromCaptureSupported = false;
         }
     }
 
@@ -550,7 +572,10 @@ public partial class MainWindow : Window
         VaultPathBrowseBtn.Content = loc["Browse"];
         VaultPathResetBtn.Content = loc["ResetDefault"];
         SettingsLoggingTitle.Text = loc["Logging"];
+        SettingsSecurityTitle.Text = loc["SecuritySection"];
+        ScreenCaptureProtectionHint.Text = loc["ScreenCaptureProtectionHint"];
         LoggingEnabledLabel.Text = loc["EnableLogging"];
+        ScreenCaptureProtectionLabel.Text = loc["ScreenCaptureProtection"];
         OpenLogsFolderBtn.Content = loc["OpenLogsFolder"];
         ClearLogsBtn.Content = loc["ClearLogs"];
         SettingsImportExportTitle.Text = loc["ImportExport"];
@@ -594,7 +619,7 @@ public partial class MainWindow : Window
     private void ShowCreateVaultForm_Click(object sender, RoutedEventArgs e)
     {
         VaultSelectionPanel.Visibility = Visibility.Collapsed;
-        CreateVaultForm.Visibility = Visibility.Visible;
+        ShowPanel(CreateVaultForm);
         UnlockForm.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
         NewVaultName.Text = "";
@@ -609,14 +634,15 @@ public partial class MainWindow : Window
 
     private void ShowVaultSelection()
     {
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         MainApp.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Collapsed;
-        VaultSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(VaultSelectionPanel);
         CreateVaultForm.Visibility = Visibility.Collapsed;
         UnlockForm.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
         _selectedVault = null;
+        _vaultPaths.ClearSelection();
         RefreshVaultList();
     }
 
@@ -630,9 +656,9 @@ public partial class MainWindow : Window
         if (VaultListBox.SelectedItem is VaultInfo vault)
         {
             _selectedVault = vault;
-            _vaultPath = vault.Path;
+            _vaultPaths.SelectVault(vault.Path);
             _storageService.Dispose();
-            _storageService = new StorageService(_vaultPath);
+            _storageService = new StorageService(_vaultPaths.ActivePath);
             _viewModel.UpdateStorageService(_storageService);
 
             _vaultManager.UpdateLastOpened(vault.Id);
@@ -641,11 +667,18 @@ public partial class MainWindow : Window
 
             VaultSelectionPanel.Visibility = Visibility.Collapsed;
             CreateVaultForm.Visibility = Visibility.Collapsed;
-            UnlockForm.Visibility = Visibility.Visible;
+            ShowPanel(UnlockForm);
             LoginStatusMessage.Text = "";
             UnlockPassword.Password = "";
 
             CheckVaultState();
+
+            // The lockout is persisted per vault, so a pending one has to be shown
+            // again here rather than silently waiting for the next failed attempt.
+            if (_storageService.IsLockedOut(out int lockoutRemaining))
+            {
+                StartLockout(lockoutRemaining);
+            }
         }
     }
 
@@ -659,8 +692,32 @@ public partial class MainWindow : Window
                 var loc = _localization;
                 ShowConfirmDialog(loc["DeleteVault"], string.Format(loc["DeleteVaultConfirm"], vault.Name), () =>
                 {
-                    _vaultManager.DeleteVault(vaultId);
-                    RefreshVaultList();
+                    try
+                    {
+                        // If this is the vault currently open, its secrets must not
+                        // outlive the files being erased.
+                        if (_selectedVault != null && _selectedVault.Id == vaultId)
+                        {
+                            CloseVaultSession();
+                            _vaultPaths.ClearSelection();
+                            _selectedVault = null;
+                            _storageService.Dispose();
+                            _storageService = new StorageService(_vaultPaths.ActivePath);
+                            _viewModel.UpdateStorageService(_storageService);
+                        }
+
+                        if (Directory.Exists(vault.Path))
+                        {
+                            Directory.Delete(vault.Path, true);
+                        }
+
+                        _vaultManager.DeleteVault(vaultId);
+                        RefreshVaultList();
+                    }
+                    catch
+                    {
+                        ShowDialog(loc["DeleteVault"], loc["ImportFailed"]);
+                    }
                 });
             }
         }
@@ -671,11 +728,11 @@ public partial class MainWindow : Window
         if (_storageService.VaultExists())
         {
             CreateVaultForm.Visibility = Visibility.Collapsed;
-            UnlockForm.Visibility = Visibility.Visible;
+            ShowPanel(UnlockForm);
         }
         else
         {
-            CreateVaultForm.Visibility = Visibility.Visible;
+            ShowPanel(CreateVaultForm);
             UnlockForm.Visibility = Visibility.Collapsed;
         }
     }
@@ -683,13 +740,24 @@ public partial class MainWindow : Window
     private void CreateVault_Click(object sender, RoutedEventArgs e)
     {
         var vaultName = NewVaultName.Text.Trim();
-        var masterPassword = CreateMasterPassword.Password;
-        var confirmPassword = ConfirmMasterPassword.Password;
         var loc = _localization;
+
+        // SecurePassword rather than Password: a .NET string is immutable and cannot
+        // be cleared, so a master password that becomes one stays in the heap.
+        using var securePassword = CreateMasterPassword.SecurePassword;
+        using var secureConfirm = ConfirmMasterPassword.SecurePassword;
         
         if (string.IsNullOrEmpty(vaultName))
         {
             LoginStatusMessage.Text = loc["VaultNameRequired"];
+            return;
+        }
+
+        // The name becomes a directory under the vaults root, so it has to be a
+        // usable Windows folder name and must not escape that root.
+        if (!VaultNameValidator.IsValid(vaultName))
+        {
+            LoginStatusMessage.Text = loc["InvalidVaultName"];
             return;
         }
 
@@ -700,37 +768,59 @@ public partial class MainWindow : Window
             return;
         }
         
-        if (string.IsNullOrEmpty(masterPassword))
+        if (securePassword.Length == 0)
         {
             LoginStatusMessage.Text = loc["PasswordRequired"];
             return;
         }
 
-        if (masterPassword.Length < 8)
+        if (securePassword.Length < 8)
         {
             LoginStatusMessage.Text = loc["PasswordTooShort"];
             return;
         }
 
-        if (masterPassword != confirmPassword)
+        var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
+
+        // Scratch buffers we own and wipe; the converter never builds a managed
+        // string, and the exact length comes back from the write.
+        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
+        var confirmBytes = new byte[SecureStringConverter.GetMaxByteCount(secureConfirm)];
+
+        try
         {
-            LoginStatusMessage.Text = loc["PasswordsMismatch"];
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
+            var confirmLength = SecureStringConverter.WriteUtf8Bytes(secureConfirm, confirmBytes);
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    passwordBytes.AsSpan(0, passwordLength),
+                    confirmBytes.AsSpan(0, confirmLength)))
+            {
+                LoginStatusMessage.Text = loc["PasswordsMismatch"];
+                return;
+            }
+
+            var vault = _vaultManager.CreateVault(vaultName, vaultPath);
+
+            _storageService.Dispose();
+            _storageService = new StorageService(vaultPath);
+            _viewModel.UpdateStorageService(_storageService);
+            _vaultPaths.SelectVault(vaultPath);
+            _selectedVault = vault;
+
+            _storageService.CreateVault(passwordBytes.AsSpan(0, passwordLength));
+        }
+        catch (Exception)
+        {
+            LoginStatusMessage.Text = loc["VaultCreateFailed"];
             return;
         }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(passwordBytes);
+            CryptographicOperations.ZeroMemory(confirmBytes);
+        }
 
-        var vaultPath = Path.Combine(_vaultPath, vaultName);
-        var vault = _vaultManager.CreateVault(vaultName, vaultPath);
-
-        _storageService.Dispose();
-        _storageService = new StorageService(vaultPath);
-        _viewModel.UpdateStorageService(_storageService);
-        _vaultPath = vaultPath;
-        _selectedVault = vault;
-
-        _storageService.CreateVault(masterPassword);
-        
-        // Securely clear password from memory
-        masterPassword = "";
         CreateMasterPassword.Password = "";
         ConfirmMasterPassword.Password = "";
         
@@ -741,35 +831,41 @@ public partial class MainWindow : Window
 
     private void Unlock_Click(object sender, RoutedEventArgs e)
     {
-        var masterPassword = UnlockPassword.Password;
-        
-        if (string.IsNullOrEmpty(masterPassword))
+        using var securePassword = UnlockPassword.SecurePassword;
+
+        if (securePassword.Length == 0)
         {
             LoginStatusMessage.Text = _localization["EnterMasterPassword"];
             return;
         }
 
-        var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(masterPassword);
-        if (!success)
-        {
-            if (remainingSeconds > 0)
-            {
-                StartLockout(remainingSeconds);
-            }
-            else
-            {
-                LoginStatusMessage.Text = errorMessage ?? _localization["IncorrectPassword"];
-            }
-            return;
-        }
+        // A scratch buffer we own and wipe; PasswordBox.Password would hand back an
+        // immutable string that cannot be cleared at all.
+        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
 
         try
         {
-            _storageService.Initialize(masterPassword);
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
+
+            // VerifyPassword derives the key and opens the vault in one pass. It also
+            // validates the stored vault version, so it can throw and belongs inside
+            // this try rather than ahead of it.
+            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBytes.AsSpan(0, passwordLength));
+            if (!success)
+            {
+                if (remainingSeconds > 0)
+                {
+                    StartLockout(remainingSeconds);
+                }
+                else
+                {
+                    LoginStatusMessage.Text = errorMessage ?? _localization["IncorrectPassword"];
+                }
+                return;
+            }
+
             var credentials = _storageService.LoadVault();
-            
-            // Clear password immediately after use
-            masterPassword = "";
+
             UnlockPassword.Password = "";
             
             _viewModel.Credentials.Clear();
@@ -796,6 +892,10 @@ public partial class MainWindow : Window
         {
             LoginStatusMessage.Text = _localization["DecryptionFailed"];
         }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(passwordBytes);
+        }
     }
 
     private void ShowMainApp()
@@ -804,13 +904,13 @@ public partial class MainWindow : Window
         ResetAutoLockTimer();
         
         LoginScreen.Visibility = Visibility.Collapsed;
-        MainApp.Visibility = Visibility.Visible;
+        ShowScreen(MainApp);
         SettingsPanel.Visibility = Visibility.Collapsed;
         
         // Reset view to show only the credentials list
         AddEditPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
-        NoSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(NoSelectionPanel);
         
         _viewModel.FilterCredentials();
         _viewModel.SelectedCredential = null;
@@ -828,7 +928,7 @@ public partial class MainWindow : Window
         _viewModel.StartAddCredential();
         PanelTitle.Text = _localization["AddNewCredential"];
         ClearEditForm();
-        AddEditPanel.Visibility = Visibility.Visible;
+        ShowPanel(AddEditPanel);
         NoSelectionPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Collapsed;
@@ -853,7 +953,7 @@ public partial class MainWindow : Window
         EditWebsite.Text = credential.Website;
         EditNotes.Text = credential.Notes;
         
-        AddEditPanel.Visibility = Visibility.Visible;
+        ShowPanel(AddEditPanel);
         NoSelectionPanel.Visibility = Visibility.Collapsed;
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Collapsed;
@@ -971,7 +1071,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            GeneratorPanel.Visibility = Visibility.Visible;
+            ShowPanel(GeneratorPanel);
             GeneratePassword();
         }
     }
@@ -1008,42 +1108,67 @@ public partial class MainWindow : Window
         GeneratePassword();
     }
 
+    private string FormatPasswordMetrics(string password)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            return "";
+        }
+
+        var result = _passwordGenerator.AnalyzeStrength(password);
+        var crackTime = string.Format(_localization[result.CrackTime.UnitKey], result.CrackTime.Amount);
+
+        return string.Format(_localization["PasswordMetrics"], result.EntropyBits, crackTime);
+    }
+
     private void UpdateStrengthIndicator(string password)
     {
         if (StrengthFill == null || StrengthLabel == null)
             return;
 
         var result = _passwordGenerator.AnalyzeStrength(password);
-        
-        var (label, fillPercent, color) = result.Score switch
-        {
-            >= 80 => (_localization["Strong"], 100, System.Windows.Media.Color.FromRgb(34, 197, 94)),   //(63, 185, 80)
-            >= 60 => (_localization["Good"], 75, System.Windows.Media.Color.FromRgb(252, 186, 3)),      //(88, 166, 255)
-            >= 40 => (_localization["Fair"], 50, System.Windows.Media.Color.FromRgb(255, 140, 0)),      //(219, 151, 50)
-            _ => (_localization["Weak"], 25, System.Windows.Media.Color.FromRgb(220, 38, 52))           //(218, 54, 51)
-        };
-        
-        StrengthLabel.Text = label;
+
+        // Buckets come from PasswordStrengthPresenter so the meter and the analyzer
+        // cannot drift apart again.
+        var presentation = PasswordStrengthPresenter.Describe(result.Score);
+        var fillPercent = presentation.FillPercent;
+        var color = StrengthColor(presentation.LocalizationKey);
+
+        StrengthLabel.Text = _localization[presentation.LocalizationKey];
         StrengthFill.Background = new System.Windows.Media.SolidColorBrush(color);
         StrengthLabel.Foreground = new System.Windows.Media.SolidColorBrush(color);
         
         StrengthLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         var textWidth = StrengthLabel.DesiredSize.Width;
         var availableWidth = Math.Max(0, StrengthGrid.ActualWidth - textWidth - 4);
-        StrengthFill.Width = availableWidth * fillPercent / 100.0;
+        AnimateStrengthFill(availableWidth * fillPercent / 100.0);
+
+        if (PasswordMetrics != null)
+        {
+            PasswordMetrics.Text = FormatPasswordMetrics(password);
+        }
     }
+
+    private static System.Windows.Media.Color StrengthColor(string localizationKey) => localizationKey switch
+    {
+        "VeryStrong" => System.Windows.Media.Color.FromRgb(34, 197, 94),
+        "Strong" => System.Windows.Media.Color.FromRgb(132, 204, 22),
+        "Good" => System.Windows.Media.Color.FromRgb(252, 186, 3),
+        "Fair" => System.Windows.Media.Color.FromRgb(255, 140, 0),
+        _ => System.Windows.Media.Color.FromRgb(220, 38, 52)
+    };
 
     private void StrengthGrid_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (_passwordGenerator != null && GeneratedPassword != null)
         {
             var result = _passwordGenerator.AnalyzeStrength(GeneratedPassword.Text ?? "");
-            var fillPercent = result.Score >= 80 ? 100 : result.Score >= 60 ? 75 : result.Score >= 40 ? 50 : 25;
+            var fillPercent = PasswordStrengthPresenter.Describe(result.Score).FillPercent;
             
             StrengthLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var textWidth = StrengthLabel.DesiredSize.Width;
             var availableWidth = Math.Max(0, StrengthGrid.ActualWidth - textWidth - 4);
-            StrengthFill.Width = availableWidth * fillPercent / 100.0;
+            SetStrengthFill(availableWidth * fillPercent / 100.0);
         }
     }
 
@@ -1096,6 +1221,21 @@ public partial class MainWindow : Window
         GeneratePassword();
     }
 
+    // Clipboard calls fail whenever another process holds the clipboard open, which
+    // clipboard managers and RDP sessions do routinely - that used to crash the app.
+    private void CopyToClipboard(string value, string successMessageKey)
+    {
+        if (SecureClipboard.TrySetText(value))
+        {
+            StatusMessage.Text = _localization[successMessageKey];
+            StartClipboardClearTimer();
+        }
+        else
+        {
+            StatusMessage.Text = _localization["ClipboardUnavailable"];
+        }
+    }
+
     private void CopyUsername_Click(object sender, RoutedEventArgs e)
     {
         var credential = _viewModel.SelectedCredential;
@@ -1104,9 +1244,7 @@ public partial class MainWindow : Window
             var username = !string.IsNullOrEmpty(credential.Username) ? credential.Username : credential.Email;
             if (!string.IsNullOrEmpty(username))
             {
-                Clipboard.SetText(username);
-                StatusMessage.Text = _localization["UsernameCopied"];
-                StartClipboardClearTimer();
+                CopyToClipboard(username, "UsernameCopied");
             }
         }
     }
@@ -1116,9 +1254,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null && !string.IsNullOrEmpty(credential.Email))
         {
-            Clipboard.SetText(credential.Email);
-            StatusMessage.Text = _localization["EmailCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Email, "EmailCopied");
         }
     }
 
@@ -1127,9 +1263,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null && !string.IsNullOrEmpty(credential.Website))
         {
-            Clipboard.SetText(credential.Website);
-            StatusMessage.Text = _localization["WebsiteCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Website, "WebsiteCopied");
         }
     }
 
@@ -1138,9 +1272,7 @@ public partial class MainWindow : Window
         var credential = _viewModel.SelectedCredential;
         if (credential != null)
         {
-            Clipboard.SetText(credential.Password);
-            StatusMessage.Text = _localization["PasswordCopied"];
-            StartClipboardClearTimer();
+            CopyToClipboard(credential.Password, "PasswordCopied");
         }
     }
 
@@ -1173,12 +1305,13 @@ public partial class MainWindow : Window
         if (credential != null)
         {
             NoSelectionPanel.Visibility = Visibility.Collapsed;
-            CredentialDetails.Visibility = Visibility.Visible;
+            ShowPanel(CredentialDetails);
             MainSettingsBtn.Visibility = Visibility.Collapsed;
             
             UsernameText.Text = credential.Username;
             EmailText.Text = credential.Email;
             PasswordText.Text = new string('•', Math.Min(credential.Password.Length, 16));
+            CredentialPasswordMetrics.Text = FormatPasswordMetrics(credential.Password);
             WebsiteText.Text = credential.Website;
             
             if (string.IsNullOrEmpty(credential.Notes))
@@ -1201,9 +1334,92 @@ public partial class MainWindow : Window
         }
     }
 
+    // Every transition goes through MotionSettings, so turning animation off in
+    // Windows makes them instant rather than merely quicker.
+    private static void ShowScreen(FrameworkElement screen) =>
+        FadeIn(screen, MotionSettings.ScreenTransition);
+
+    // Panels swapping inside a screen - the create form, the generator, the details
+    // pane - move a shorter distance conceptually, so they get a shorter fade.
+    private static void ShowPanel(FrameworkElement panel) =>
+        FadeIn(panel, MotionSettings.PanelTransition);
+
+    private static void FadeIn(FrameworkElement screen, TimeSpan requested)
+    {
+        screen.Visibility = Visibility.Visible;
+
+        var duration = MotionSettings.Scale(requested);
+        if (duration == TimeSpan.Zero)
+        {
+            screen.BeginAnimation(UIElement.OpacityProperty, null);
+            screen.Opacity = 1;
+            screen.RenderTransform = null;
+            return;
+        }
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var slide = new TranslateTransform(0, 8);
+        screen.RenderTransform = slide;
+
+        screen.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        slide.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(8, 0, duration) { EasingFunction = ease });
+    }
+
+    private void ShowDialogOverlay()
+    {
+        DialogOverlay.Visibility = Visibility.Visible;
+
+        var duration = MotionSettings.Scale(MotionSettings.DialogTransition);
+        if (duration == TimeSpan.Zero)
+        {
+            DialogOverlay.BeginAnimation(UIElement.OpacityProperty, null);
+            DialogOverlay.Opacity = 1;
+            DialogBorder.RenderTransform = null;
+            return;
+        }
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var scale = new ScaleTransform(0.96, 0.96);
+        DialogBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+        DialogBorder.RenderTransform = scale;
+
+        DialogOverlay.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+    }
+
+    private void AnimateStrengthFill(double targetWidth)
+    {
+        var duration = MotionSettings.Scale(MotionSettings.StrengthBar);
+        if (duration == TimeSpan.Zero)
+        {
+            SetStrengthFill(targetWidth);
+            return;
+        }
+
+        StrengthFill.BeginAnimation(FrameworkElement.WidthProperty,
+            new DoubleAnimation(targetWidth, duration)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    // Clearing the animation first: once a property is animated, plain assignment
+    // is ignored until the animation is removed.
+    private void SetStrengthFill(double width)
+    {
+        StrengthFill.BeginAnimation(FrameworkElement.WidthProperty, null);
+        StrengthFill.Width = width;
+    }
+
     private void ShowNoSelection()
     {
-        NoSelectionPanel.Visibility = Visibility.Visible;
+        ShowPanel(NoSelectionPanel);
         CredentialDetails.Visibility = Visibility.Collapsed;
         MainSettingsBtn.Visibility = Visibility.Visible;
     }
@@ -1239,7 +1455,7 @@ public partial class MainWindow : Window
 
         LoginScreen.Visibility = Visibility.Collapsed;
         MainApp.Visibility = Visibility.Collapsed;
-        SettingsPanel.Visibility = Visibility.Visible;
+        ShowScreen(SettingsPanel);
 
         InitializeSettings();
     }
@@ -1262,6 +1478,7 @@ public partial class MainWindow : Window
 
         LoadPathSettings();
         LoggingEnabledCheckBox.IsChecked = AuditService.LoggingEnabled;
+        ScreenCaptureProtectionCheckBox.IsChecked = _screenCaptureProtectionEnabled;
     }
 
     private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1277,7 +1494,10 @@ public partial class MainWindow : Window
 
     private void SettingsBackBtn_Click(object sender, RoutedEventArgs e)
     {
-        ApplyPathChanges();
+        if (ApplyPathChanges())
+        {
+            SavePathSettings();
+        }
 
         // Settings is an overlay, not a logout. Always falling through to the vault
         // list looked like a lock while the vault stayed unlocked and the master key
@@ -1286,7 +1506,7 @@ public partial class MainWindow : Window
         {
             SettingsPanel.Visibility = Visibility.Collapsed;
             LoginScreen.Visibility = Visibility.Collapsed;
-            MainApp.Visibility = Visibility.Visible;
+            ShowScreen(MainApp);
             ResetAutoLockTimer();
         }
         else
@@ -1303,8 +1523,10 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true)
         {
             VaultPathTextBox.Text = dialog.FolderName;
-            SavePathSettings();
-            ApplyPathChanges();
+            if (ApplyPathChanges())
+            {
+                SavePathSettings();
+            }
         }
     }
 
@@ -1312,11 +1534,14 @@ public partial class MainWindow : Window
     {
         var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
         VaultPathTextBox.Text = defaultPath;
-        SavePathSettings();
-        ApplyPathChanges();
+        if (ApplyPathChanges())
+        {
+            SavePathSettings();
+        }
     }
 
     private Action? _dialogConfirmAction;
+    private Action? _dialogCancelAction;
 
     private void ShowDialog(string title, string message)
     {
@@ -1325,22 +1550,23 @@ public partial class MainWindow : Window
         DialogCancelBtn.Visibility = Visibility.Collapsed;
         DialogOkBtn.Visibility = Visibility.Visible;
         DialogOkBtn.Content = _localization["OK"];
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = null;
         DialogOkBtn.Focus();
     }
 
-    private void ShowConfirmDialog(string title, string message, Action onConfirm)
+    private void ShowConfirmDialog(string title, string message, Action onConfirm, Action? onCancel = null)
     {
         DialogTitle.Text = title;
         DialogMessage.Text = message;
         DialogCancelBtn.Visibility = Visibility.Visible;
         DialogCancelBtn.Content = _localization["Cancel"];
         DialogOkBtn.Content = _localization["Confirm"];
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = onConfirm;
+        _dialogCancelAction = onCancel;
         DialogOkBtn.Focus();
     }
 
@@ -1364,6 +1590,7 @@ public partial class MainWindow : Window
         DialogOkBtn.Width = 140;
         DialogCancelBtn.Width = 140;
         DialogVaultComboBox.Visibility = Visibility.Collapsed;
+        _dialogCancelAction = null;
         _dialogConfirmAction?.Invoke();
         _dialogConfirmAction = null;
         _exportAction?.Invoke();
@@ -1379,32 +1606,95 @@ public partial class MainWindow : Window
         DialogCancelBtn.Width = 140;
         DialogVaultComboBox.Visibility = Visibility.Collapsed;
         _dialogConfirmAction = null;
+        _dialogCancelAction?.Invoke();
+        _dialogCancelAction = null;
         _exportAction = null;
+    }
+
+    private void ScreenCaptureProtectionCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        var enabled = ScreenCaptureProtectionCheckBox.IsChecked == true;
+
+        if (enabled == _screenCaptureProtectionEnabled)
+        {
+            // Fired by loading the setting into the UI, not by the user.
+            return;
+        }
+
+        if (enabled)
+        {
+            ApplyScreenCaptureProtection(true);
+            return;
+        }
+
+        // Turning it off is a downgrade, so it is confirmed; turning it on is not.
+        var loc = _localization;
+        ShowConfirmDialog(
+            loc["ScreenCaptureProtectionOffTitle"],
+            loc["ScreenCaptureProtectionOffWarning"],
+            () => ApplyScreenCaptureProtection(false),
+            () => ScreenCaptureProtectionCheckBox.IsChecked = true);
+    }
+
+    private void ApplyScreenCaptureProtection(bool enabled)
+    {
+        _screenCaptureProtectionEnabled = enabled;
+        _settings.SetBool(AppSettingsStore.ScreenCaptureProtectionKey, enabled);
+
+        // Reapplies to every window the app owns. The periodic sweep reads the same
+        // flag, so it will not quietly restore protection a moment after this.
+        ProtectAllAppWindows();
     }
 
     private void LoggingEnabledCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        AuditService.LoggingEnabled = LoggingEnabledCheckBox.IsChecked == true;
+        var enabled = LoggingEnabledCheckBox.IsChecked == true;
+        AuditService.LoggingEnabled = enabled;
+        _settings.SetBool(AppSettingsStore.LoggingEnabledKey, enabled);
     }
 
     private void OpenLogsFolderBtn_Click(object sender, RoutedEventArgs e)
     {
-        var logsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault", "Logs");
-        if (!Directory.Exists(logsPath))
+        // Ask the audit service where it actually writes instead of guessing, and let
+        // the shell open the folder so a username containing a space still resolves.
+        var logsPath = AuditService.Instance?.LogFolderPath
+            ?? Path.Combine(GetConfigDirectory(), "Logs");
+
+        try
         {
             Directory.CreateDirectory(logsPath);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = logsPath,
+                UseShellExecute = true
+            });
         }
-        System.Diagnostics.Process.Start("explorer.exe", logsPath);
+        catch
+        {
+        }
     }
 
     private void DeleteCurrentVaultBtn_Click(object sender, RoutedEventArgs e)
     {
         var loc = _localization;
+
+        // Refuse when nothing is selected, or when the selection is the vaults root -
+        // deleting the root takes every vault the user has with it.
+        if (!_vaultPaths.CanDeleteCurrentVault)
+        {
+            ShowDialog(loc["DeleteCurrentVault"], loc["NoVaultSelectedToDelete"]);
+            return;
+        }
+
+        var vaultPath = _vaultPaths.DeleteTargetPath;
+
         ShowConfirmDialog(loc["DeleteCurrentVault"], loc["DeleteVaultWarning"], () =>
         {
             try
             {
-                var vaultPath = _vaultPath;
+                // The master key and decrypted credentials must not outlive the files.
+                CloseVaultSession();
+
                 if (Directory.Exists(vaultPath))
                 {
                     Directory.Delete(vaultPath, true);
@@ -1416,8 +1706,10 @@ public partial class MainWindow : Window
                     _selectedVault = null;
                 }
 
+                _vaultPaths.ClearSelection();
+
                 _storageService.Dispose();
-                _storageService = new StorageService(_vaultPath);
+                _storageService = new StorageService(_vaultPaths.ActivePath);
                 _viewModel.UpdateStorageService(_storageService);
 
                 ShowDialog(loc["DeleteCurrentVault"], loc["VaultDeleted"]);
@@ -1475,7 +1767,7 @@ public partial class MainWindow : Window
         }
         DialogVaultComboBox.SelectedIndex = 0;
 
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = null;
         _exportAction = () =>
@@ -1546,9 +1838,13 @@ public partial class MainWindow : Window
 
     private void ImportVault(string sourcePath, LocalizationService loc)
     {
+        // Extracted into a local so the finally below can always reach it: every early
+        // return and every exception used to leave a decryptable copy of someone's
+        // vault sitting in %TEMP%.
+        string tempDir = "";
+
         try
         {
-            string tempDir = "";
             string vaultDatPath = "";
             string configJsonPath = "";
 
@@ -1564,7 +1860,6 @@ public partial class MainWindow : Window
 
                 if (!File.Exists(vaultDatPath) || !File.Exists(configJsonPath))
                 {
-                    Directory.Delete(tempDir, true);
                     ShowDialog(loc["ImportVault"], loc["InvalidImportSource"]);
                     return;
                 }
@@ -1587,6 +1882,11 @@ public partial class MainWindow : Window
             }
 
             var vaultName = Path.GetFileNameWithoutExtension(sourcePath);
+            if (!VaultNameValidator.IsValid(vaultName))
+            {
+                ShowDialog(loc["ImportVault"], loc["InvalidVaultName"]);
+                return;
+            }
 
             var existingVaults = _vaultManager.GetAllVaults();
             var baseName = vaultName;
@@ -1597,16 +1897,11 @@ public partial class MainWindow : Window
                 counter++;
             }
 
-            var vaultPath = Path.Combine(_vaultPath, vaultName);
+            var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
             Directory.CreateDirectory(vaultPath);
 
             File.Copy(vaultDatPath, Path.Combine(vaultPath, "vault.dat"), true);
             File.Copy(configJsonPath, Path.Combine(vaultPath, "config.json"), true);
-
-            if (!string.IsNullOrEmpty(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
 
             _vaultManager.CreateVault(vaultName, vaultPath);
 
@@ -1617,63 +1912,64 @@ public partial class MainWindow : Window
         {
             ShowDialog(loc["ImportVault"], loc["ImportFailed"]);
         }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempDir) && Directory.Exists(tempDir))
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
     }
 
     private void SavePathSettings()
     {
-        var defaultConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
-        var settingsConfigPath = Path.Combine(defaultConfigPath, "settings.json");
-        var config = new Dictionary<string, string>();
-
-        if (File.Exists(settingsConfigPath))
-        {
-            var json = File.ReadAllText(settingsConfigPath);
-            config = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
-        }
-
-        config["vaultPath"] = VaultPathTextBox.Text;
-        File.WriteAllText(settingsConfigPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
+        _settings.SetString(AppSettingsStore.VaultPathKey, VaultPathTextBox.Text);
     }
 
+    private static string GetDefaultVaultRoot()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
+    }
+
+    private static string GetConfigDirectory()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
+    }
+
+    // Reads the configured vaults ROOT. It must not touch the selected vault:
+    // opening Settings used to retarget the current vault at the root, which made
+    // "delete this vault" delete every vault instead.
     private void LoadPathSettings()
     {
-        var defaultConfigPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CipherVault");
-        var settingsConfigPath = Path.Combine(defaultConfigPath, "settings.json");
-        var defaultVaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CipherVault");
+        var rootPath = _settings.GetString(AppSettingsStore.VaultPathKey) ?? GetDefaultVaultRoot();
 
-        _vaultPath = defaultVaultPath;
-
-        if (File.Exists(settingsConfigPath))
-        {
-            var json = File.ReadAllText(settingsConfigPath);
-            var config = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (config != null)
-            {
-                if (config.TryGetValue("vaultPath", out var vp) && !string.IsNullOrEmpty(vp))
-                    _vaultPath = vp;
-            }
-        }
-
-        VaultPathTextBox.Text = _vaultPath;
+        _vaultPaths.SetRoot(rootPath);
+        VaultPathTextBox.Text = rootPath;
     }
 
-    private void ApplyPathChanges()
+    /// <summary>
+    /// Applies the path typed into settings. Returns false when the change was
+    /// refused, so the caller does not persist a path the app just rejected.
+    /// </summary>
+    private bool ApplyPathChanges()
     {
         var newVaultPath = VaultPathTextBox.Text;
 
-        if (newVaultPath != _vaultPath)
+        if (newVaultPath != _vaultPaths.RootPath)
         {
             if (_isVaultUnlocked)
             {
                 var loc = _localization;
                 ShowDialog(loc["VaultOpen"], loc["LockVaultBeforePathChange"]);
                 LoadPathSettings();
-                return;
+                return false;
             }
 
             _storageService.Dispose();
-            _vaultPath = newVaultPath;
-            _storageService = new StorageService(_vaultPath);
+            _vaultPaths.SetRoot(newVaultPath);
+            _vaultPaths.ClearSelection();
+            _selectedVault = null;
+            _storageService = new StorageService(_vaultPaths.ActivePath);
             _viewModel.UpdateStorageService(_storageService);
 
             CheckVaultState();
@@ -1684,6 +1980,8 @@ public partial class MainWindow : Window
                 ShowDialog(loc["Warning"], loc["NoVaultAtPath"]);
             }
         }
+
+        return true;
     }
 
     private void UnlockPassword_KeyDown(object sender, KeyEventArgs e)
