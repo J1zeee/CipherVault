@@ -1,5 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -297,7 +299,7 @@ public partial class MainWindow : Window
         CloseVaultSession();
         _lockoutTimer.Stop();
         
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         MainApp.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Collapsed;
         LoginStatusMessage.Text = "";
@@ -308,7 +310,7 @@ public partial class MainWindow : Window
     private void SwitchToMainApp()
     {
         SettingsPanel.Visibility = Visibility.Collapsed;
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         _previousScreen = null;
     }
 
@@ -632,7 +634,7 @@ public partial class MainWindow : Window
 
     private void ShowVaultSelection()
     {
-        LoginScreen.Visibility = Visibility.Visible;
+        ShowScreen(LoginScreen);
         MainApp.Visibility = Visibility.Collapsed;
         SettingsPanel.Visibility = Visibility.Collapsed;
         VaultSelectionPanel.Visibility = Visibility.Visible;
@@ -902,7 +904,7 @@ public partial class MainWindow : Window
         ResetAutoLockTimer();
         
         LoginScreen.Visibility = Visibility.Collapsed;
-        MainApp.Visibility = Visibility.Visible;
+        ShowScreen(MainApp);
         SettingsPanel.Visibility = Visibility.Collapsed;
         
         // Reset view to show only the credentials list
@@ -1139,7 +1141,7 @@ public partial class MainWindow : Window
         StrengthLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         var textWidth = StrengthLabel.DesiredSize.Width;
         var availableWidth = Math.Max(0, StrengthGrid.ActualWidth - textWidth - 4);
-        StrengthFill.Width = availableWidth * fillPercent / 100.0;
+        AnimateStrengthFill(availableWidth * fillPercent / 100.0);
 
         if (PasswordMetrics != null)
         {
@@ -1166,7 +1168,7 @@ public partial class MainWindow : Window
             StrengthLabel.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
             var textWidth = StrengthLabel.DesiredSize.Width;
             var availableWidth = Math.Max(0, StrengthGrid.ActualWidth - textWidth - 4);
-            StrengthFill.Width = availableWidth * fillPercent / 100.0;
+            SetStrengthFill(availableWidth * fillPercent / 100.0);
         }
     }
 
@@ -1304,6 +1306,7 @@ public partial class MainWindow : Window
         {
             NoSelectionPanel.Visibility = Visibility.Collapsed;
             CredentialDetails.Visibility = Visibility.Visible;
+            CrossFadeDetails();
             MainSettingsBtn.Visibility = Visibility.Collapsed;
             
             UsernameText.Text = credential.Username;
@@ -1330,6 +1333,98 @@ public partial class MainWindow : Window
             _viewModel.IsPasswordVisible = false;
             ShowPasswordBtn.Content = "👁️";
         }
+    }
+
+    // Every transition goes through MotionSettings, so turning animation off in
+    // Windows makes them instant rather than merely quicker.
+    private static void ShowScreen(FrameworkElement screen)
+    {
+        screen.Visibility = Visibility.Visible;
+
+        var duration = MotionSettings.Scale(MotionSettings.ScreenTransition);
+        if (duration == TimeSpan.Zero)
+        {
+            screen.BeginAnimation(UIElement.OpacityProperty, null);
+            screen.Opacity = 1;
+            screen.RenderTransform = null;
+            return;
+        }
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var slide = new TranslateTransform(0, 8);
+        screen.RenderTransform = slide;
+
+        screen.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        slide.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(8, 0, duration) { EasingFunction = ease });
+    }
+
+    private void ShowDialogOverlay()
+    {
+        DialogOverlay.Visibility = Visibility.Visible;
+
+        var duration = MotionSettings.Scale(MotionSettings.DialogTransition);
+        if (duration == TimeSpan.Zero)
+        {
+            DialogOverlay.BeginAnimation(UIElement.OpacityProperty, null);
+            DialogOverlay.Opacity = 1;
+            DialogBorder.RenderTransform = null;
+            return;
+        }
+
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var scale = new ScaleTransform(0.96, 0.96);
+        DialogBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+        DialogBorder.RenderTransform = scale;
+
+        DialogOverlay.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, duration) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleXProperty,
+            new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+        scale.BeginAnimation(ScaleTransform.ScaleYProperty,
+            new DoubleAnimation(0.96, 1, duration) { EasingFunction = ease });
+    }
+
+    private void CrossFadeDetails()
+    {
+        var duration = MotionSettings.Scale(MotionSettings.DetailCrossFade);
+        if (duration == TimeSpan.Zero)
+        {
+            CredentialDetails.BeginAnimation(UIElement.OpacityProperty, null);
+            CredentialDetails.Opacity = 1;
+            return;
+        }
+
+        CredentialDetails.BeginAnimation(UIElement.OpacityProperty,
+            new DoubleAnimation(0, 1, duration)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    private void AnimateStrengthFill(double targetWidth)
+    {
+        var duration = MotionSettings.Scale(MotionSettings.StrengthBar);
+        if (duration == TimeSpan.Zero)
+        {
+            SetStrengthFill(targetWidth);
+            return;
+        }
+
+        StrengthFill.BeginAnimation(FrameworkElement.WidthProperty,
+            new DoubleAnimation(targetWidth, duration)
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            });
+    }
+
+    // Clearing the animation first: once a property is animated, plain assignment
+    // is ignored until the animation is removed.
+    private void SetStrengthFill(double width)
+    {
+        StrengthFill.BeginAnimation(FrameworkElement.WidthProperty, null);
+        StrengthFill.Width = width;
     }
 
     private void ShowNoSelection()
@@ -1370,7 +1465,7 @@ public partial class MainWindow : Window
 
         LoginScreen.Visibility = Visibility.Collapsed;
         MainApp.Visibility = Visibility.Collapsed;
-        SettingsPanel.Visibility = Visibility.Visible;
+        ShowScreen(SettingsPanel);
 
         InitializeSettings();
     }
@@ -1421,7 +1516,7 @@ public partial class MainWindow : Window
         {
             SettingsPanel.Visibility = Visibility.Collapsed;
             LoginScreen.Visibility = Visibility.Collapsed;
-            MainApp.Visibility = Visibility.Visible;
+            ShowScreen(MainApp);
             ResetAutoLockTimer();
         }
         else
@@ -1465,7 +1560,7 @@ public partial class MainWindow : Window
         DialogCancelBtn.Visibility = Visibility.Collapsed;
         DialogOkBtn.Visibility = Visibility.Visible;
         DialogOkBtn.Content = _localization["OK"];
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = null;
         DialogOkBtn.Focus();
@@ -1478,7 +1573,7 @@ public partial class MainWindow : Window
         DialogCancelBtn.Visibility = Visibility.Visible;
         DialogCancelBtn.Content = _localization["Cancel"];
         DialogOkBtn.Content = _localization["Confirm"];
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = onConfirm;
         _dialogCancelAction = onCancel;
@@ -1682,7 +1777,7 @@ public partial class MainWindow : Window
         }
         DialogVaultComboBox.SelectedIndex = 0;
 
-        DialogOverlay.Visibility = Visibility.Visible;
+        ShowDialogOverlay();
         DialogOverlay.KeyDown += DialogOverlay_KeyDown;
         _dialogConfirmAction = null;
         _exportAction = () =>
