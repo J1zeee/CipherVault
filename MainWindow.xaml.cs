@@ -1794,9 +1794,8 @@ public partial class MainWindow : Window
             if (saveDialog.ShowDialog() == true)
             {
                 var vaultDat = Path.Combine(vaultInfo.Path, "vault.dat");
-                var configJson = Path.Combine(vaultInfo.Path, "config.json");
 
-                if (!File.Exists(vaultDat) || !File.Exists(configJson))
+                if (!File.Exists(vaultDat))
                 {
                     ShowDialog(loc["ExportVault"], loc["ImportFailed"]);
                     return;
@@ -1808,7 +1807,6 @@ public partial class MainWindow : Window
                 using (var archive = ZipFile.Open(saveDialog.FileName, ZipArchiveMode.Create))
                 {
                     archive.CreateEntryFromFile(vaultDat, "vault.dat");
-                    archive.CreateEntryFromFile(configJson, "config.json");
                 }
 
                 ShowDialog(loc["ExportVault"], loc["ExportSuccess"]);
@@ -1846,7 +1844,6 @@ public partial class MainWindow : Window
         try
         {
             string vaultDatPath = "";
-            string configJsonPath = "";
 
             if (sourcePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
@@ -1856,9 +1853,8 @@ public partial class MainWindow : Window
                 ZipFile.ExtractToDirectory(sourcePath, tempDir);
 
                 vaultDatPath = Path.Combine(tempDir, "vault.dat");
-                configJsonPath = Path.Combine(tempDir, "config.json");
 
-                if (!File.Exists(vaultDatPath) || !File.Exists(configJsonPath))
+                if (!File.Exists(vaultDatPath))
                 {
                     ShowDialog(loc["ImportVault"], loc["InvalidImportSource"]);
                     return;
@@ -1867,9 +1863,8 @@ public partial class MainWindow : Window
             else if (Directory.Exists(sourcePath))
             {
                 vaultDatPath = Path.Combine(sourcePath, "vault.dat");
-                configJsonPath = Path.Combine(sourcePath, "config.json");
 
-                if (!File.Exists(vaultDatPath) || !File.Exists(configJsonPath))
+                if (!File.Exists(vaultDatPath))
                 {
                     ShowDialog(loc["ImportVault"], loc["InvalidImportSource"]);
                     return;
@@ -1901,7 +1896,6 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(vaultPath);
 
             File.Copy(vaultDatPath, Path.Combine(vaultPath, "vault.dat"), true);
-            File.Copy(configJsonPath, Path.Combine(vaultPath, "config.json"), true);
 
             _vaultManager.CreateVault(vaultName, vaultPath);
 

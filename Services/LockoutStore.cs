@@ -17,8 +17,8 @@ public sealed class LockoutState
 ///
 /// The blob is sealed with DPAPI under the current Windows user: it cannot be edited
 /// by hand and does not travel to another machine or account. It deliberately lives
-/// outside config.json so that exporting a vault does not carry an unreadable blob to
-/// the importing machine.
+/// in its own file so that exporting a vault (which ships only vault.dat) does not
+/// carry an unreadable blob to the importing machine.
 ///
 /// A missing or unreadable file is treated as "no failed attempts". That is fail-open
 /// by design - failing closed would permanently lock a user out of their own vault

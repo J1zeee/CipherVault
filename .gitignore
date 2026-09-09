@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 # Local-only test project: kept out of the repository by request.
 # Run it with: dotnet test CipherVault.Tests/CipherVault.Tests.csproj
 CipherVault.Tests/
+
+# Local AI tooling notes
+docs/superpowers/

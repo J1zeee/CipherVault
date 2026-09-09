@@ -21,7 +21,7 @@
 
 - **AES-256-GCM** authenticated encryption for all vault data
 - **Argon2id** key derivation (128 MB memory, 3 iterations, 4 threads)
-- **HKDF-SHA256** key separation — distinct keys for verification and encryption
+- **Single derived key** — the Argon2id output is the AES key directly; the vault unlocks only when decryption succeeds
 - **Secure in-memory buffers** — `VirtualAlloc` + `VirtualLock` + `CryptProtectMemory`, zeroed on dispose
 - **Anti-screen-capture** via `SetWindowDisplayAffinity`
 - **Auto-lock** after 1 minute of inactivity
@@ -43,7 +43,7 @@
 |---|---|
 | **Master password brute-force** | Argon2id (128 MB, 3 iter) + exponential backoff after 5 failures |
 | **Memory dump extraction** | VirtualLock prevents paging to disk; CryptProtectMemory encrypts data in RAM; buffers are zeroed on release |
-| **Ciphertext tampering** | AES-GCM authentication tag rejects modified vaults |
+| **Ciphertext tampering & wrong password** | AES-GCM authentication tag rejects modified vaults; a wrong key fails to decrypt |
 | **Screen capture** | `WDA_EXCLUDEFROMCAPTURE` on the main window |
 | **Timing attacks** | `CryptographicOperations.FixedTimeEquals` for password verification |
 
@@ -74,7 +74,7 @@
 
 | Library / API | Purpose |
 |---|---|
-| `System.Security.Cryptography` | AES-256-GCM, HKDF, RNG, constant-time ops |
+| `System.Security.Cryptography` | AES-256-GCM, RNG, constant-time ops |
 | `Konscious.Security.Cryptography.Argon2` | Argon2id KDF |
 | `kernel32.dll` (P/Invoke) | VirtualAlloc, VirtualLock |
 | `crypt32.dll` (P/Invoke) | CryptProtectMemory |
@@ -130,22 +130,18 @@ Master password  +  Random salt
       Argon2id  (128 MB / 3 iter / 4 threads)
           │
           ▼
-     Master key  (32 bytes)
+  Encryption key  (32 bytes, held in SecureBuffer)
           │
-          ├── HKDF — info="verify"   ──▶  Verification key  (stored in config.json)
+          ▼
+ AES-256-GCM Encrypt / Decrypt
           │
-          └── HKDF — info="encrypt"  ──▶  Encryption key   (held in SecureBuffer, never persisted)
-                                               │
-                                               ▼
-                                        AES-256-GCM Encrypt / Decrypt
-                                               │
-                                               ▼
-                                       vault.dat  (nonce + ciphertext + tag)
+          ▼
+  vault.dat  (salt + nonce + ciphertext + tag)
 ```
 
-- **`vault.dat`** contains the encrypted credential payload. Each encryption generates a fresh 12-byte random nonce.
-- **`config.json`** stores the verification hash, Argon2id salt, and vault metadata — never the encryption key.
-- The encryption key exists only in process memory inside a `SecureBuffer` (VirtualAlloc + CryptProtectMemory).
+- **`vault.dat`** is self-contained: `[salt 32][nonce 12][ciphertext][tag 16]`. The salt is generated once at creation, stored in plaintext as the header (it is not secret), and reused for every re-encryption so the key can be re-derived at the next login.
+- The Argon2id output **is** the encryption key (no HKDF split). Unlocking derives the key with the typed password and attempts to decrypt the vault: a correct password validates the authentication tag, a wrong one fails.
+- The key exists only in process memory inside a `SecureBuffer` (VirtualAlloc + CryptProtectMemory) and is wiped on lock.
 
 <br>
 

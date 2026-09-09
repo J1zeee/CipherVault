@@ -10,14 +10,12 @@ namespace CipherVault.Services;
 public class StorageService : IDisposable
 {
     private readonly string _dataPath;
-    private readonly string _configPath;
     private SecureBuffer? _masterKey;
+    private byte[]? _salt;
     private AuditService? _audit;
     private bool _isDisposed;
     private bool _isVaultOpen;
 
-    private const int CurrentVersion = 1;
-    private const int KeySizeBytes = 32;
     private const int NonceSizeBytes = 12;
     private const int TagSizeBytes = 16;
     private const int SaltSizeBytes = 32;
@@ -44,7 +42,6 @@ public class StorageService : IDisposable
         Directory.CreateDirectory(roamingFolder);
         
         _dataPath = Path.Combine(localFolder, "vault.dat");
-        _configPath = Path.Combine(localFolder, "config.json");
 
         // Lockout state is persisted per vault: recreating this service (switching
         // vaults, restarting the app) must not hand an attacker a fresh attempt budget.
@@ -65,45 +62,18 @@ public class StorageService : IDisposable
 
     public bool VaultExists()
     {
-        return File.Exists(_dataPath) && File.Exists(_configPath);
+        return File.Exists(_dataPath);
     }
 
-    private VaultConfig? LoadConfig()
+    /// <summary>Reads the fixed Argon2id salt from the vault header.</summary>
+    private static byte[] ExtractSalt(byte[] vaultData)
     {
-        if (!File.Exists(_configPath)) return null;
-        var json = File.ReadAllText(_configPath);
-        return JsonSerializer.Deserialize<VaultConfig>(json);
-    }
+        if (vaultData.Length < SaltSizeBytes + NonceSizeBytes + TagSizeBytes)
+            throw new InvalidOperationException("Invalid cipher data");
 
-    private static byte[] UnlockAndCopy(SecureBuffer buffer)
-    {
-        buffer.BeginAccess();
-        var copy = buffer.ToArray();
-        buffer.EndAccess();
-        return copy;
-    }
-
-    private static SecureBuffer DeriveKeyToBuffer(byte[] masterKeyRaw, byte[] info)
-    {
-        var key = new SecureBuffer(KeySizeBytes);
-        var derivedBytes = HKDF.Expand(HashAlgorithmName.SHA256, masterKeyRaw, KeySizeBytes, info);
-        key.Write(derivedBytes);
-        CryptographicOperations.ZeroMemory(derivedBytes);
-        key.EndAccess();
-        return key;
-    }
-
-    private void ValidateVaultVersion(VaultConfig config)
-    {
-        if (config.Version < 1)
-        {
-            throw new InvalidOperationException("Invalid vault version");
-        }
-
-        if (config.Version > CurrentVersion)
-        {
-            throw new InvalidOperationException($"Vault version {config.Version} is not supported. Please update CipherVault.");
-        }
+        var salt = new byte[SaltSizeBytes];
+        Buffer.BlockCopy(vaultData, 0, salt, 0, SaltSizeBytes);
+        return salt;
     }
 
     public (bool Success, string? ErrorMessage, int RemainingSeconds) VerifyPassword(ReadOnlySpan<byte> masterPassword)
@@ -119,48 +89,36 @@ public class StorageService : IDisposable
             return (false, GetLockoutMessage(existingRemaining), existingRemaining);
         }
 
-        var config = LoadConfig();
-        if (config == null)
+        if (!File.Exists(_dataPath))
         {
             _audit?.LogSecurityWarning("Vault not found during login attempt");
             return (false, "Vault not found", 0);
         }
 
-        ValidateVaultVersion(config);
-
-        var salt = Convert.FromBase64String(config.Salt);
-        var storedVerifyKey = Convert.FromBase64String(config.PasswordHash);
-        
+        byte[]? encrypted = null;
+        byte[]? salt = null;
+        byte[]? plaintext = null;
         SecureBuffer? masterKeyBuffer = null;
-        byte[]? masterKeyRaw = null;
-        SecureBuffer? computedVerifyKey = null;
         
         try
         {
+            encrypted = File.ReadAllBytes(_dataPath);
+            salt = ExtractSalt(encrypted);
+
             masterKeyBuffer = MasterKeyDerivation.Derive(masterPassword, salt);
-            masterKeyRaw = UnlockAndCopy(masterKeyBuffer);
-            computedVerifyKey = DeriveKeyToBuffer(masterKeyRaw, "verify"u8.ToArray());
-            
-            computedVerifyKey.BeginAccess();
-            bool isValid = SecureMemory.FixedTimeEquals(computedVerifyKey.Span, storedVerifyKey.AsSpan());
-            computedVerifyKey.EndAccess();
-            
-            if (isValid)
+
+            // The Argon2id output IS the encryption key. A decryption attempt is the
+            // password check: the authentication tag only verifies when the right key
+            // was used, so failure means the password was wrong (or the file tampered).
+            try
             {
-                _masterKey?.Dispose();
-                _masterKey = DeriveKeyToBuffer(masterKeyRaw, "encrypt"u8.ToArray());
-                _isVaultOpen = true;
-                
-                ResetFailedAttempts();
-                _audit?.LogLoginSuccess();
-                _audit?.LogVaultOpened();
-                return (true, null, 0);
+                plaintext = Decrypt(masterKeyBuffer, encrypted);
             }
-            else
+            catch (InvalidOperationException)
             {
                 int remaining = RecordFailedAttempt();
                 _audit?.LogLoginFailed(_failedAttempts);
-                
+
                 if (remaining > 0)
                 {
                     int delay = CalculateLockoutDelay();
@@ -169,14 +127,28 @@ public class StorageService : IDisposable
                 }
                 return (false, null, 0);
             }
+
+            // Correct password: promote the derived key to the live master key and
+            // retain the vault salt for the next save.
+            _masterKey?.Dispose();
+            _masterKey = masterKeyBuffer;
+            masterKeyBuffer = null; // ownership transferred to _masterKey
+            _salt = salt;
+            salt = null; // ownership transferred to _salt
+
+            _isVaultOpen = true;
+
+            ResetFailedAttempts();
+            _audit?.LogLoginSuccess();
+            _audit?.LogVaultOpened();
+            return (true, null, 0);
         }
         finally
         {
-            if (masterKeyRaw != null) CryptographicOperations.ZeroMemory(masterKeyRaw);
             masterKeyBuffer?.Dispose();
-            computedVerifyKey?.Dispose();
-            CryptographicOperations.ZeroMemory(salt);
-            CryptographicOperations.ZeroMemory(storedVerifyKey);
+            if (plaintext != null) CryptographicOperations.ZeroMemory(plaintext);
+            if (encrypted != null) CryptographicOperations.ZeroMemory(encrypted);
+            if (salt != null) CryptographicOperations.ZeroMemory(salt);
         }
     }
     
@@ -283,44 +255,31 @@ public class StorageService : IDisposable
         RandomNumberGenerator.Fill(salt);
         
         SecureBuffer? masterKeyBuffer = null;
-        byte[]? masterKeyRaw = null;
-        SecureBuffer? verifyKeyBuffer = null;
-        byte[]? verifyKeyBytes = null;
         
         try
         {
+            // The Argon2id output IS the AES-GCM key; no HKDF split.
             masterKeyBuffer = MasterKeyDerivation.Derive(masterPassword, salt);
-            masterKeyRaw = UnlockAndCopy(masterKeyBuffer);
-            
-            verifyKeyBuffer = DeriveKeyToBuffer(masterKeyRaw, "verify"u8.ToArray());
-            verifyKeyBuffer.BeginAccess();
-            verifyKeyBytes = verifyKeyBuffer.ToArray();
-            verifyKeyBuffer.EndAccess();
-            
-            _masterKey = DeriveKeyToBuffer(masterKeyRaw, "encrypt"u8.ToArray());
+            _masterKey = masterKeyBuffer;
+            masterKeyBuffer = null; // ownership transferred to _masterKey
 
-            var config = new VaultConfig
-            {
-                Version = CurrentVersion,
-                Salt = Convert.ToBase64String(salt),
-                PasswordHash = Convert.ToBase64String(verifyKeyBytes)
-            };
+            // The salt travels as a plaintext header inside vault.dat. It is not
+            // secret, but it is fixed for the life of the vault so the key can be
+            // re-derived from the password at the next login.
+            _salt = salt;
+            salt = null; // ownership transferred to _salt
 
             var encrypted = Encrypt("[]"u8);
 
             AtomicFile.WriteAllBytes(_dataPath, encrypted);
-            AtomicFile.WriteAllText(_configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
             
             _audit?.LogVaultCreated();
             _isVaultOpen = true;
         }
         finally
         {
-            if (masterKeyRaw != null) CryptographicOperations.ZeroMemory(masterKeyRaw);
             masterKeyBuffer?.Dispose();
-            if (verifyKeyBytes != null) CryptographicOperations.ZeroMemory(verifyKeyBytes);
-            verifyKeyBuffer?.Dispose();
-            CryptographicOperations.ZeroMemory(salt);
+            if (salt != null) CryptographicOperations.ZeroMemory(salt);
         }
     }
 
@@ -447,6 +406,7 @@ public class StorageService : IDisposable
     private byte[] Encrypt(ReadOnlySpan<byte> plainBytes)
     {
         if (_masterKey == null) throw new InvalidOperationException("Not initialized");
+        if (_salt == null) throw new InvalidOperationException("Salt not initialized");
 
         var nonce = new byte[NonceSizeBytes];
         RandomNumberGenerator.Fill(nonce);
@@ -464,10 +424,12 @@ public class StorageService : IDisposable
             using var aesGcm = new AesGcm(_masterKey.Span, TagSizeBytes);
             aesGcm.Encrypt(nonce, plainBytes, cipherText, tag);
 
-            var result = new byte[NonceSizeBytes + cipherText.Length + TagSizeBytes];
-            Buffer.BlockCopy(nonce, 0, result, 0, NonceSizeBytes);
-            Buffer.BlockCopy(cipherText, 0, result, NonceSizeBytes, cipherText.Length);
-            Buffer.BlockCopy(tag, 0, result, NonceSizeBytes + cipherText.Length, TagSizeBytes);
+            // vault.dat layout: [salt 32][nonce 12][ciphertext][tag 16]
+            var result = new byte[SaltSizeBytes + NonceSizeBytes + cipherText.Length + TagSizeBytes];
+            Buffer.BlockCopy(_salt, 0, result, 0, SaltSizeBytes);
+            Buffer.BlockCopy(nonce, 0, result, SaltSizeBytes, NonceSizeBytes);
+            Buffer.BlockCopy(cipherText, 0, result, SaltSizeBytes + NonceSizeBytes, cipherText.Length);
+            Buffer.BlockCopy(tag, 0, result, SaltSizeBytes + NonceSizeBytes + cipherText.Length, TagSizeBytes);
 
             return result;
         }
@@ -484,17 +446,28 @@ public class StorageService : IDisposable
     private byte[] Decrypt(byte[] cipherData)
     {
         if (_masterKey == null) throw new InvalidOperationException("Not initialized");
+        return Decrypt(_masterKey, cipherData);
+    }
 
-        if (cipherData.Length < NonceSizeBytes + TagSizeBytes)
+    /// <summary>
+    /// Decrypts with an explicit key. Used by login, where the freshly derived key
+    /// is checked against the vault before being promoted to the live master key.
+    /// </summary>
+    private byte[] Decrypt(SecureBuffer key, byte[] cipherData)
+    {
+        if (key == null) throw new InvalidOperationException("Not initialized");
+
+        // vault.dat layout: [salt 32][nonce 12][ciphertext][tag 16]
+        if (cipherData.Length < SaltSizeBytes + NonceSizeBytes + TagSizeBytes)
             throw new InvalidOperationException("Invalid cipher data");
 
         var nonce = new byte[NonceSizeBytes];
         var tag = new byte[TagSizeBytes];
-        var cipherText = new byte[cipherData.Length - NonceSizeBytes - TagSizeBytes];
+        var cipherText = new byte[cipherData.Length - SaltSizeBytes - NonceSizeBytes - TagSizeBytes];
 
-        Buffer.BlockCopy(cipherData, 0, nonce, 0, NonceSizeBytes);
-        Buffer.BlockCopy(cipherData, NonceSizeBytes, cipherText, 0, cipherText.Length);
-        Buffer.BlockCopy(cipherData, NonceSizeBytes + cipherText.Length, tag, 0, TagSizeBytes);
+        Buffer.BlockCopy(cipherData, SaltSizeBytes, nonce, 0, NonceSizeBytes);
+        Buffer.BlockCopy(cipherData, SaltSizeBytes + NonceSizeBytes, cipherText, 0, cipherText.Length);
+        Buffer.BlockCopy(cipherData, SaltSizeBytes + NonceSizeBytes + cipherText.Length, tag, 0, TagSizeBytes);
 
         byte[]? plainBytes = null;
         
@@ -502,9 +475,9 @@ public class StorageService : IDisposable
         {
             plainBytes = new byte[cipherText.Length];
 
-            _masterKey.BeginAccess();
+            key.BeginAccess();
 
-            using var aesGcm = new AesGcm(_masterKey.Span, TagSizeBytes);
+            using var aesGcm = new AesGcm(key.Span, TagSizeBytes);
             aesGcm.Decrypt(nonce, cipherText, tag, plainBytes);
 
             return plainBytes;
@@ -516,7 +489,7 @@ public class StorageService : IDisposable
         }
         finally
         {
-            _masterKey?.EndAccess();
+            key?.EndAccess();
             CryptographicOperations.ZeroMemory(nonce);
             CryptographicOperations.ZeroMemory(cipherText);
             CryptographicOperations.ZeroMemory(tag);
@@ -527,6 +500,12 @@ public class StorageService : IDisposable
     {
         _masterKey?.Dispose();
         _masterKey = null;
+
+        if (_salt != null)
+        {
+            CryptographicOperations.ZeroMemory(_salt);
+            _salt = null;
+        }
     }
 
     public void Dispose()
@@ -542,11 +521,4 @@ public class StorageService : IDisposable
     // No finalizer: CloseVault writes to the audit log, and file I/O from the
     // finalizer thread during shutdown is a good way to hang or throw. The master
     // key's pinned memory is released by SecureBuffer's own finalizer.
-}
-
-public class VaultConfig
-{
-    public int Version { get; set; } = 1;
-    public string Salt { get; set; } = "";
-    public string PasswordHash { get; set; } = "";
 }
