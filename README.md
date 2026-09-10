@@ -3,7 +3,7 @@
 **Secure, offline password manager for Windows with modern cryptography.**
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/download)
-[![C#](https://img.shields.io/badge/C%23-14-239120?logo=csharp)](https://learn.microsoft.com/dotnet/csharp)
+[![C#](https://img.shields.io/badge/C%23-12-239120?logo=csharp)](https://learn.microsoft.com/dotnet/csharp)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D4?logo=windows)](https://www.microsoft.com/windows)
 [![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/J1zeee/CipherVault/releases/latest)
@@ -71,7 +71,7 @@
 ## Tech Stack
 
 ```
-.NET 8.0  •  WPF  •  C# 14
+.NET 8.0  •  WPF  •  C# 12
 ```
 
 | Library / API | Purpose |
