@@ -105,7 +105,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 ### Скачать релиз
 
-Скачайте `CipherVault-v1.0.0.zip` из [Releases](https://github.com/J1zeee/CipherVault/releases/latest), распакуйте и запустите `CipherVault.exe`.
+Скачайте последнюю версию из [Releases](https://github.com/J1zeee/CipherVault/releases/latest), распакуйте и запустите `CipherVault.exe`.
 
 <br>
 
@@ -115,7 +115,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 <img src="../Screenshots/LoginScreen.png" alt="Login screen" width="500">
 
-**2. Добавьте запись** — название, имя пользователя, email, пароль, сайт, заметки. Встроенный генератор создаёт криптостойкие пароли.
+**2. Добавьте профиль** — название, имя пользователя, email, пароль, сайт, заметки. Встроенный генератор создаёт криптостойкие пароли.
 
 <img src="../Screenshots/AddCredential.png" alt="Add credential" width="500">
 
