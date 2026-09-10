@@ -8,6 +8,7 @@
         xmlns:converters="clr-namespace:CipherVault.Converters"
         mc:Ignorable="d"
         Title="CipherVault - Password Manager"
+        Icon="/resources/icon.ico"
         Height="800" Width="1100"
         MinHeight="600" MinWidth="900"
         WindowStartupLocation="CenterScreen"
@@ -602,8 +603,7 @@
                                     <StackPanel Grid.Column="0">
                                         <TextBlock x:Name="WebsiteLabel" Text="Website" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
 <TextBlock x:Name="WebsiteText" FontSize="16"
-                                                    Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"
-                                                    Cursor="Hand" MouseLeftButtonDown="WebsiteText_MouseDown"/>
+                                                    Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,0"/>
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="📋" Style="{StaticResource IconButton}" ToolTip="Copy"
                                             Click="CopyWebsite_Click"/>

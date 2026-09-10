@@ -1660,6 +1660,8 @@ public partial class MainWindow : Window
         var logsPath = AuditService.Instance?.LogFolderPath
             ?? Path.Combine(GetConfigDirectory(), "Logs");
 
+        // Opening a folder reuses the already running Explorer window and does not
+        // create a child process, so the child-process mitigation stays intact.
         try
         {
             Directory.CreateDirectory(logsPath);
@@ -1678,11 +1680,20 @@ public partial class MainWindow : Window
     {
         var loc = _localization;
 
-        // Refuse when nothing is selected, or when the selection is the vaults root -
+        // Refuse when nothing is selected, when the selection is the vaults root -
         // deleting the root takes every vault the user has with it.
         if (!_vaultPaths.CanDeleteCurrentVault)
         {
             ShowDialog(loc["DeleteCurrentVault"], loc["NoVaultSelectedToDelete"]);
+            return;
+        }
+
+        // A vault may only be deleted from inside it: the user must have entered
+        // its password and be viewing it. This guards the files (and the master
+        // key needed to decrypt them) with the same barrier that opens the vault.
+        if (!_isVaultUnlocked)
+        {
+            ShowDialog(loc["DeleteCurrentVault"], loc["VaultLockedToDelete"]);
             return;
         }
 
@@ -1991,28 +2002,6 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter)
         {
             CreateVault_Click(sender, e);
-        }
-    }
-
-    private void WebsiteText_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        var credential = _viewModel.SelectedCredential;
-        if (credential != null && !string.IsNullOrEmpty(credential.Website))
-        {
-            try
-            {
-                var url = credential.Website;
-                if (!url.StartsWith("http://") && !url.StartsWith("https://"))
-                {
-                    url = "https://" + url;
-                }
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = url,
-                    UseShellExecute = true
-                });
-            }
-            catch { }
         }
     }
 }
