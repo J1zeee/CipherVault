@@ -105,7 +105,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 ### Download release
 
-Download the latest `CipherVault-v1.0.0.zip` from [Releases](https://github.com/J1zeee/CipherVault/releases/latest), extract and run `CipherVault.exe`.
+Download the latest version from [Releases](https://github.com/J1zeee/CipherVault/releases/latest), extract and run `CipherVault.exe`.
 
 <br>
 
