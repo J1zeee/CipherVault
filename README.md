@@ -21,9 +21,9 @@
 
 - **AES-256-GCM** authenticated encryption for all vault data
 - **Argon2id** key derivation (128 MiB memory, 3 iterations, 4 threads)
-- **Single derived key** — the Argon2id output *is* the AES key; no HKDF split
+- **Single derived key** — the Argon2id output *is* the AES key
 - **Decrypt-to-verify unlock** — a wrong password simply fails to decrypt the vault
-- **Self-contained `vault.dat`** — the Argon2id salt lives in the file header; no `config.json`
+- **Self-contained `vault.dat`** — the Argon2id salt lives in the file header
 - **Secure in-memory buffers** — `VirtualAlloc` + `VirtualLock` + `CryptProtectMemory`, zeroed on dispose
 - **Anti-screen-capture** via `SetWindowDisplayAffinity` (`WDA_EXCLUDEFROMCAPTURE`, `WDA_MONITOR` fallback)
 - **Clipboard protection** — auto-clear after 10 s, excluded from Win+V history and cloud clipboard
@@ -47,7 +47,7 @@
 | **Wrong password / ciphertext tampering** | AES-GCM authentication tag rejects modified vaults; a wrong key fails to decrypt |
 | **Screen capture** | `WDA_EXCLUDEFROMCAPTURE` on all app windows (`WDA_MONITOR` fallback on older builds) |
 | **Clipboard history & cloud sync** | Secrets are excluded from Win+V history and cloud clipboard before copying |
-| **Process hardening (Release builds)** | Single-instance mutex (Global), anti-debugger checks, forced ASLR relocation, remote/low-integrity image blocking and a strict child-process ban. No external process can be spawned: link-opening is disabled (the logs-folder button still works by reusing the running Explorer window). Debug builds skip all of it |
+| **Process hardening (Release builds)** | Single-instance mutex (Global), anti-debugger checks, forced ASLR relocation, remote/low-integrity image blocking and a strict child-process ban. No external process can be spawned. Debug builds skip all of it |
 
 | Not covered | Reason |
 |---|---|
