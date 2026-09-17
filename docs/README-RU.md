@@ -77,13 +77,15 @@
 | Библиотека / API | Назначение |
 |---|---|
 | `System.Security.Cryptography` | AES-256-GCM, RNG, constant-time операции |
-| `Konscious.Security.Cryptography.Argon2` | Argon2id KDF |
+| `argon2.dll` (P/Invoke) | Argon2id KDF — эталонная реализация P-H-C, затирает свою внутреннюю память |
 | `System.Security.Cryptography.ProtectedData` | DPAPI для состояния блокировки каждого хранилища |
 | `kernel32.dll` (P/Invoke) | VirtualAlloc, VirtualLock |
 | `crypt32.dll` (P/Invoke) | CryptProtectMemory |
 | `user32.dll` (P/Invoke) | SetWindowDisplayAffinity (защита от захвата экрана) |
 | `System.Text.Json` | Сериализация данных хранилища и настроек |
 | `System.IO.Compression` | Импорт / экспорт хранилищ |
+
+`argon2.dll` собирается из исходников в `native/argon2` (P-H-C `phc-winner-argon2`, тег `20190702`, коммит `62358ba`) скриптом `native/argon2/build.ps1`; нужна Visual Studio с C++ workload. Сборка детерминированная, SHA-256 закоммиченной DLL: `51EAAE65F68E12BD0C404F499BF18A52765A18E9DFD78BB962E8C661DE29CA09`.
 
 <br>
 

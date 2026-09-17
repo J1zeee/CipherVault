@@ -77,13 +77,15 @@
 | Library / API | Purpose |
 |---|---|
 | `System.Security.Cryptography` | AES-256-GCM, RNG, constant-time ops |
-| `Konscious.Security.Cryptography.Argon2` | Argon2id KDF |
+| `argon2.dll` (P/Invoke) | Argon2id KDF — P-H-C reference implementation, wipes its internal memory |
 | `System.Security.Cryptography.ProtectedData` | DPAPI sealing for per-vault lockout state |
 | `kernel32.dll` (P/Invoke) | VirtualAlloc, VirtualLock |
 | `crypt32.dll` (P/Invoke) | CryptProtectMemory |
 | `user32.dll` (P/Invoke) | SetWindowDisplayAffinity (screen-capture protection) |
 | `System.Text.Json` | Vault data & settings serialization |
 | `System.IO.Compression` | Vault import/export |
+
+`argon2.dll` is built from the vendored sources in `native/argon2` (P-H-C `phc-winner-argon2`, tag `20190702`, commit `62358ba`) by `native/argon2/build.ps1`, which needs Visual Studio with the C++ workload. The build is deterministic; the committed DLL has SHA-256 `51EAAE65F68E12BD0C404F499BF18A52765A18E9DFD78BB962E8C661DE29CA09`.
 
 <br>
 
