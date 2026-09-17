@@ -22,6 +22,12 @@ namespace CipherVault.Services;
 /// </summary>
 public static class SecureStringConverter
 {
+    /// <summary>
+    /// Smallest scratch buffer handed out even when the value is empty, so callers can
+    /// always allocate before they know how much will actually be written.
+    /// </summary>
+    public const int MinimumScratchSize = 16;
+
     /// <summary>Bytes that <see cref="WriteUtf8Bytes"/> can need at most for this value.</summary>
     public static int GetMaxByteCount(SecureString value)
     {
@@ -29,6 +35,19 @@ public static class SecureStringConverter
             return 0;
 
         return Encoding.UTF8.GetMaxByteCount(value.Length);
+    }
+
+    /// <summary>
+    /// Allocates an unmanaged, RAM-pinned scratch buffer (VirtualAlloc + VirtualLock
+    /// via <see cref="SecureBuffer"/>) that is large enough for the value's UTF-8
+    /// encoding and at least <see cref="MinimumScratchSize"/> bytes. The plaintext
+    /// never sits on the swappable managed heap. The caller must Clear and dispose the
+    /// result; disposal zeroes the whole allocation, padding included.
+    /// </summary>
+    public static SecureBuffer AllocateScratchBuffer(SecureString value)
+    {
+        var required = GetMaxByteCount(value);
+        return new SecureBuffer(Math.Max(required, MinimumScratchSize));
     }
 
     /// <summary>

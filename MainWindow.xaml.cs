@@ -782,19 +782,23 @@ public partial class MainWindow : Window
 
         var vaultPath = Path.Combine(_vaultPaths.RootPath, vaultName);
 
-        // Scratch buffers we own and wipe; the converter never builds a managed
-        // string, and the exact length comes back from the write.
-        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
-        var confirmBytes = new byte[SecureStringConverter.GetMaxByteCount(secureConfirm)];
+        // Scratch buffers live in unmanaged, RAM-pinned pages (VirtualAlloc +
+        // VirtualLock via SecureBuffer): the plaintext never sits on the swappable
+        // managed heap. Clear (below) and Dispose (via using) zero the whole
+        // allocation, padding past the written length included.
+        using var passwordBuffer = SecureStringConverter.AllocateScratchBuffer(securePassword);
+        using var confirmBuffer = SecureStringConverter.AllocateScratchBuffer(secureConfirm);
 
         try
         {
-            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
-            var confirmLength = SecureStringConverter.WriteUtf8Bytes(secureConfirm, confirmBytes);
+            // The converter never builds a managed string, and the exact length comes
+            // back from the write.
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBuffer.GetWritableSpan());
+            var confirmLength = SecureStringConverter.WriteUtf8Bytes(secureConfirm, confirmBuffer.GetWritableSpan());
 
             if (!CryptographicOperations.FixedTimeEquals(
-                    passwordBytes.AsSpan(0, passwordLength),
-                    confirmBytes.AsSpan(0, confirmLength)))
+                    passwordBuffer.Span.Slice(0, passwordLength),
+                    confirmBuffer.Span.Slice(0, confirmLength)))
             {
                 LoginStatusMessage.Text = loc["PasswordsMismatch"];
                 return;
@@ -808,7 +812,7 @@ public partial class MainWindow : Window
             _vaultPaths.SelectVault(vaultPath);
             _selectedVault = vault;
 
-            _storageService.CreateVault(passwordBytes.AsSpan(0, passwordLength));
+            _storageService.CreateVault(passwordBuffer.Span.Slice(0, passwordLength));
         }
         catch (Exception)
         {
@@ -817,13 +821,14 @@ public partial class MainWindow : Window
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(passwordBytes);
-            CryptographicOperations.ZeroMemory(confirmBytes);
+            // Runs on every path: match, mismatch or exception.
+            passwordBuffer.Clear();
+            confirmBuffer.Clear();
+
+            CreateMasterPassword.Password = "";
+            ConfirmMasterPassword.Password = "";
         }
 
-        CreateMasterPassword.Password = "";
-        ConfirmMasterPassword.Password = "";
-        
         _viewModel.Credentials.Clear();
         _viewModel.FilterCredentials();
         ShowMainApp();
@@ -839,18 +844,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        // A scratch buffer we own and wipe; PasswordBox.Password would hand back an
-        // immutable string that cannot be cleared at all.
-        var passwordBytes = new byte[SecureStringConverter.GetMaxByteCount(securePassword)];
+        // A scratch buffer in unmanaged, RAM-pinned pages (VirtualAlloc + VirtualLock
+        // via SecureBuffer); PasswordBox.Password would hand back an immutable string
+        // that cannot be cleared at all.
+        using var passwordBuffer = SecureStringConverter.AllocateScratchBuffer(securePassword);
 
         try
         {
-            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBytes);
+            var passwordLength = SecureStringConverter.WriteUtf8Bytes(securePassword, passwordBuffer.GetWritableSpan());
 
             // VerifyPassword derives the key and opens the vault in one pass. It also
             // validates the stored vault version, so it can throw and belongs inside
             // this try rather than ahead of it.
-            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBytes.AsSpan(0, passwordLength));
+            var (success, errorMessage, remainingSeconds) = _storageService.VerifyPassword(passwordBuffer.Span.Slice(0, passwordLength));
             if (!success)
             {
                 if (remainingSeconds > 0)
@@ -866,8 +872,6 @@ public partial class MainWindow : Window
 
             var credentials = _storageService.LoadVault();
 
-            UnlockPassword.Password = "";
-            
             _viewModel.Credentials.Clear();
             foreach (var cred in credentials)
             {
@@ -894,7 +898,9 @@ public partial class MainWindow : Window
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(passwordBytes);
+            // Runs on every path: success, wrong password or exception.
+            passwordBuffer.Clear();
+            UnlockPassword.Password = "";
         }
     }
 
